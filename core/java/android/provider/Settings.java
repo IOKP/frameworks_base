@@ -4473,6 +4473,16 @@ public final class Settings {
          * @hide
          */
         public static final String STATUSBAR_SIGNAL_SHOW_4G_FOR_LTE = "statusbar_signal_show_4g_for_lte";
+    
+         /**
+          * Volume keys control cursor in text fields (default is 0)
+          * 0 - Disabled
+          * 1 - Volume up/down moves cursor left/right
+          * 2 - Volume up/down moves cursor right/left
+          * @hide
+          */
+         public static final String VOLUME_KEY_CURSOR_CONTROL = "volume_key_cursor_control";
+
     }
 
     /**
