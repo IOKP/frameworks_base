@@ -2808,10 +2808,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             return -1;
         }
 
-         // Let the application handle the key.
-          return 0;
-       }
-
+        // Let the application handle the key.
+        return 0;
+    }
 
     /** {@inheritDoc} */
     @Override

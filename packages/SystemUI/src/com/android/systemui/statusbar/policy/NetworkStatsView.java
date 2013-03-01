@@ -50,6 +50,7 @@ public class NetworkStatsView extends LinearLayout {
     private long mLastRx;
     private long mRefreshInterval;
     private long mLastUpdateTime;
+    private boolean mIsScreenOn;
     private Context mContext;
     protected int mNetStatsColor;
 
@@ -135,7 +136,7 @@ public class NetworkStatsView extends LinearLayout {
 
             setVisibility(mActivated ? View.VISIBLE : View.GONE);
 
-            if (mActivated && mAttached) {
+            if (mActivated && mAttached && mIsScreenOn) {
                 updateStats();
             }
         }
