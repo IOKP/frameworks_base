@@ -4457,6 +4457,16 @@ public final class Settings {
         public static final String TOGGLES_STYLE = "toggls_style";
 
         /**
+         * @hide
+         */
+        public static final String WAKELOCK_BLOCKING_ENABLED = "wakelock_blocking_enabled";
+
+        /**
+         * @hide
+         */
+        public static final String WAKELOCK_BLOCKING_LIST = "wakelock_blocking_list";
+
+        /**
          * Boolean value. Whether to show the 4G icon when on LTE.
          * True = show 4G
          * False = show LTE
