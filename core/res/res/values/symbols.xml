@@ -1928,6 +1928,7 @@
   <java-symbol type="bool" name="config_samsung_stk" />
   <java-symbol type="array" name="config_telephony_set_audioparameters" />
   <java-symbol type="string" name="config_legacyUmsLunFile" />
+  <java-symbol type="bool" name="config_hasDockBattery" />
 
   <!-- Power Menu -->
   <java-symbol type="drawable" name="ic_lock_screenshot" />
@@ -1943,6 +1944,8 @@
   <java-symbol type="string" name="toast_rotation_locked" />
 
   <java-symbol type="bool" name="config_noDelayInATwoDP" />
+  <java-symbol type="string" name="config_deviceKeyHandlerLib" />
+  <java-symbol type="string" name="config_deviceKeyHandlerClass" />
 
   <!-- Wifi -->
   <java-symbol type="bool" name="config_wifiApFirmwareReload" />
@@ -2037,22 +2040,6 @@
   <!-- Package Manager -->
   <java-symbol type="array" name="config_disabledComponents" />
 
-  <!-- Multi SIM related -->
-  <java-symbol type="string" name="msim_kg_sim_pin_msg_format" />
-  <java-symbol type="string" name="msim_carrier_text_format" />
-
-  <java-symbol type="id" name="msim_keyguard_sim_pin_view" />
-  <java-symbol type="id" name="msim_keyguard_sim_puk_view" />
-  <java-symbol type="id" name="msim_keyguard_carrier_area" />
-  <java-symbol type="id" name="stub_msim_carrier_text" />
-
-  <java-symbol type="layout" name="msim_keyguard_sim_pin_view" />
-  <java-symbol type="layout" name="msim_keyguard_sim_puk_view" />
-  <java-symbol type="layout" name="msim_keyguard_carrier_area" />
-
-  <!-- SMS RIL_REQUEST_SEND_SMS_EXPECT_MORE -->
-  <java-symbol type="bool" name="config_smsUseExpectMore" />
-
   <!-- Boot message dialog -->
   <java-symbol type="drawable" name="busy_dlg_animation" />
   <java-symbol type="drawable" name="busy_dlg_animation_0" />
@@ -2069,4 +2056,24 @@
   <java-symbol type="id" name="busy_dlg_animation" />
   <java-symbol type="id" name="busy_dlg_title" />
   <java-symbol type="layout" name="busy_dlg" />
+
+  <!-- Device specific handlers -->
+  <java-symbol type="string" name="config_deviceHandlersLib" />
+  <java-symbol type="string" name="config_deviceDockBatteryHandlerClass" />
+
+  <!-- Multi SIM related -->
+  <java-symbol type="string" name="msim_kg_sim_pin_msg_format" />
+  <java-symbol type="string" name="msim_carrier_text_format" />
+
+  <java-symbol type="id" name="msim_keyguard_sim_pin_view" />
+  <java-symbol type="id" name="msim_keyguard_sim_puk_view" />
+  <java-symbol type="id" name="msim_keyguard_carrier_area" />
+  <java-symbol type="id" name="stub_msim_carrier_text" />
+
+  <java-symbol type="layout" name="msim_keyguard_sim_pin_view" />
+  <java-symbol type="layout" name="msim_keyguard_sim_puk_view" />
+  <java-symbol type="layout" name="msim_keyguard_carrier_area" />
+
+  <!-- SMS RIL_REQUEST_SEND_SMS_EXPECT_MORE -->
+  <java-symbol type="bool" name="config_smsUseExpectMore" />
 </resources>
