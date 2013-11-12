@@ -18,6 +18,7 @@ package com.android.internal.policy.impl;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.ActivityManagerNative;
+import android.app.AppGlobals;
 import android.app.AppOpsManager;
 import android.app.PacBusyDialog;
 import android.app.IUiModeManager;
@@ -30,6 +31,7 @@ import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
@@ -116,10 +118,14 @@ import com.android.internal.statusbar.IStatusBarService;
 import com.android.internal.telephony.ITelephony;
 import com.android.internal.widget.PointerLocationView;
 
+import dalvik.system.DexClassLoader;
+
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.lang.reflect.Constructor;
+import java.util.List;
 
 import static android.view.WindowManager.LayoutParams.*;
 import static android.view.WindowManagerPolicy.WindowManagerFuncs.LID_ABSENT;
@@ -304,6 +310,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     int mUiMode;
     int mDockMode = Intent.EXTRA_DOCK_STATE_UNDOCKED;
     int mLidOpenRotation;
+    boolean mHasRemovableLid;
     int mCarDockRotation;
     int mDeskDockRotation;
     int mUndockedHdmiRotation;
@@ -333,6 +340,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     int mPointerLocationMode = 0; // guarded by mLock
     int mDeviceHardwareKeys;
     boolean mHasMenuKeyEnabled;
+
+    // HW overlays state
+    int mDisableOverlays = 0;
 
     // The last window we were told about in focusChanged.
     WindowState mFocusedWindow;
@@ -1455,6 +1465,16 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             mOverscanTop = top;
             mOverscanRight = right;
             mOverscanBottom = bottom;
+        }
+    }
+
+    private void closeApplication(String packageName) {
+        try {
+            ActivityManagerNative.getDefault().killApplicationProcess(
+                    packageName, AppGlobals.getPackageManager().getPackageUid(
+                    packageName, UserHandle.myUserId()));
+        } catch (RemoteException e) {
+            // Good luck next time!
         }
     }
 
@@ -2788,9 +2808,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             return -1;
         }
 
-        // Let the application handle the key.
-        return 0;
-    }
+         // Let the application handle the key.
+          return 0;
+       }
+
 
     /** {@inheritDoc} */
     @Override
@@ -3458,10 +3479,6 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 if (r.bottom > mStableBottom) r.bottom = mStableBottom;
             }
         }
-    }
-    
-    public Rect getContentRect() {
-        return new Rect(mContentLeft, mContentTop, mContentRight, mContentBottom);
     }
 
     /** {@inheritDoc} */
