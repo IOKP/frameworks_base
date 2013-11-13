@@ -2831,6 +2831,14 @@ public final class Settings {
          */
         public static final String RAM_USAGE_BAR = "ram_usage_bar";
 
+        /**
+         * Goodbye fullscreen keyboard
+         *
+         * @hide
+         */
+
+       public static final String FULLSCREEN_KEYBOARD = "fullscreen_keyboard";
+
        /**
         * Key to store Torch state.
         * @hide 
@@ -4457,12 +4465,32 @@ public final class Settings {
         public static final String TOGGLES_STYLE = "toggls_style";
 
         /**
+         * @hide
+         */
+        public static final String WAKELOCK_BLOCKING_ENABLED = "wakelock_blocking_enabled";
+
+        /**
+         * @hide
+         */
+        public static final String WAKELOCK_BLOCKING_LIST = "wakelock_blocking_list";
+
+        /**
          * Boolean value. Whether to show the 4G icon when on LTE.
          * True = show 4G
          * False = show LTE
          * @hide
          */
         public static final String STATUSBAR_SIGNAL_SHOW_4G_FOR_LTE = "statusbar_signal_show_4g_for_lte";
+    
+         /**
+          * Volume keys control cursor in text fields (default is 0)
+          * 0 - Disabled
+          * 1 - Volume up/down moves cursor left/right
+          * 2 - Volume up/down moves cursor right/left
+          * @hide
+          */
+         public static final String VOLUME_KEY_CURSOR_CONTROL = "volume_key_cursor_control";
+
     }
 
     /**
