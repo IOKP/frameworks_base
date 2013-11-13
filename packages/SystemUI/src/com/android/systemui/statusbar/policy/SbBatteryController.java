@@ -74,14 +74,14 @@ public class SbBatteryController extends LinearLayout {
     public static final int STYLE_TEXT_ONLY = 1;
     public static final int STYLE_ICON_TEXT = 2;
     public static final int STYLE_ICON_BIG_TEXT = 3;
-    public static final int STYLE_ICON_CENTERED_TEXT = 3;
-    public static final int STYLE_ICON_CIRCLE = 4;
-    public static final int STYLE_ICON_RACING_RB = 5;
-    public static final int STYLE_ICON_GAUGE_RB = 6;
-    public static final int STYLE_ICON_PLANET_RB = 7;
-    public static final int STYLE_ICON_SLIDER_RB = 8;
-    public static final int STYLE_ICON_BRICK_RB = 9;
-    public static final int STYLE_HIDE = 10;
+    public static final int STYLE_ICON_CENTERED_TEXT = 4;
+    public static final int STYLE_ICON_CIRCLE = 5;
+    public static final int STYLE_ICON_RACING_RB = 6;
+    public static final int STYLE_ICON_GAUGE_RB = 7;
+    public static final int STYLE_ICON_PLANET_RB = 8;
+    public static final int STYLE_ICON_SLIDER_RB = 9;
+    public static final int STYLE_ICON_BRICK_RB = 10;
+    public static final int STYLE_HIDE = 11;
 
     public SbBatteryController(Context context, AttributeSet attrs) {
         super(context, attrs);
