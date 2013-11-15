@@ -1251,7 +1251,7 @@ public class LockPatternUtils {
         final boolean isProfileSecure = mProfileManager.getActiveProfile().getScreenLockModeWithDPM(mContext) == Profile.LockMode.DEFAULT;
         final boolean secure = (isPattern && isLockPatternEnabled() && savedPatternExists()
                 || isPassword && savedPasswordExists()
-                || isGesture && isLockGestureEnabled() && savedGestureExists()) && isProfileSecure;
+                || isProfileSecure);
         return secure;
     }
 
