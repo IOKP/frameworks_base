@@ -688,7 +688,7 @@ public class RingtoneManager {
 
         return null;
     }
-    
+
     /**
      * Gets the current default sound's {@link Uri}. This will give the actual
      * sound {@link Uri}, instead of using this, most clients can use
