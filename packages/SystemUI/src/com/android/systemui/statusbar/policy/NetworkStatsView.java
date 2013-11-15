@@ -71,10 +71,6 @@ public class NetworkStatsView extends LinearLayout {
         mLastTx = TrafficStats.getTotalTxBytes();
         mHandler = new Handler();
         mSettingsObserver = new SettingsObserver(mHandler);
-        mSettingsObserver.observe();
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
-        context.registerReceiver(mConnectivityReceiver, filter);
     }
 
     // runnable to invalidate view via mHandler.postDelayed() call
@@ -112,9 +108,7 @@ public class NetworkStatsView extends LinearLayout {
         public void onChange(boolean selfChange) {
             // check for connectivity
             ConnectivityManager cm =
-                    (ConnectivityManager)getContext().getSystemService(
-                            Context.CONNECTIVITY_SERVICE);
-
+                    (ConnectivityManager)mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
             NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
             boolean networkAvailable = activeNetwork != null ? activeNetwork.isConnected() : false;
 
