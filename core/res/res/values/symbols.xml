@@ -2076,4 +2076,11 @@
 
   <!-- SMS RIL_REQUEST_SEND_SMS_EXPECT_MORE -->
   <java-symbol type="bool" name="config_smsUseExpectMore" />
+
+  <!-- Profiles -->
+  <java-symbol type="xml" name="profile_default" />
+  <java-symbol type="string" name="wildcardProfile" />
+  <java-symbol type="string" name="profile_picker_title" />
+  <java-symbol type="string" name="profile_none" />
+
 </resources>
