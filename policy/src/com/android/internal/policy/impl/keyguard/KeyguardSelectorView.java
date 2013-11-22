@@ -25,8 +25,10 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.graphics.drawable.Drawable;
+import android.os.BatteryManager;
 import android.os.Handler;
 import android.os.Message;
 import android.os.UserHandle;
@@ -88,6 +90,7 @@ public class KeyguardSelectorView extends LinearLayout implements KeyguardSecuri
     private UnlockReceiver mUnlockReceiver;
     private IntentFilter filter;
     private boolean mReceiverRegistered = false;
+    private float mBatteryLevel;
 
     private class H extends Handler {
         public void handleMessage(Message m) {
@@ -221,6 +224,11 @@ public class KeyguardSelectorView extends LinearLayout implements KeyguardSecuri
         public void onSimStateChanged(State simState) {
             updateTargets();
         }
+
+        @Override
+        public void onRefreshBatteryInfo(KeyguardUpdateMonitor.BatteryStatus batStatus) {
+            updateLockscreenBattery(batStatus);
+        }
     };
 
     private final KeyguardActivityLauncher mActivityLauncher = new KeyguardActivityLauncher() {
@@ -306,6 +314,18 @@ public class KeyguardSelectorView extends LinearLayout implements KeyguardSecuri
         }
         mContext.registerReceiver(mUnlockReceiver, filter);
         mReceiverRegistered = true;
+
+        final int unsecureUnlockMethod = Settings.Secure.getInt(mContext.getContentResolver(),
+                Settings.Secure.LOCKSCREEN_UNSECURE_USED, 1);
+        final int lockBeforeUnlock = Settings.Secure.getInt(mContext.getContentResolver(),
+                Settings.Secure.LOCK_BEFORE_UNLOCK, 0);
+
+        //bring emergency button on slider lockscreen to front when lockBeforeUnlock is enabled
+        //to make it clickable
+        if (unsecureUnlockMethod == 0 && lockBeforeUnlock == 1) {
+            LinearLayout ecaContainer = (LinearLayout) findViewById(R.id.keyguard_selector_fade_container);
+            ecaContainer.bringToFront();
+        }
     }
 
     public void setCarrierArea(View carrierArea) {
@@ -429,6 +449,7 @@ public class KeyguardSelectorView extends LinearLayout implements KeyguardSecuri
         }
         mGlowPadView.setTargetResources(storedDraw);
         updateResources();
+        updateLockscreenBattery(null);
     }
 
     private int mUnlockCounter() {
@@ -559,9 +580,31 @@ public class KeyguardSelectorView extends LinearLayout implements KeyguardSecuri
                 }
             }
             if (mReceiverRegistered) {
-                mContext.unregisterReceiver(mUnlockReceiver);
                 mReceiverRegistered = false;
             }
+        }
+    }
+
+    public void updateLockscreenBattery(KeyguardUpdateMonitor.BatteryStatus status) {
+        if (Settings.System.getIntForUser(
+                mContext.getContentResolver(),
+                Settings.System.BATTERY_AROUND_LOCKSCREEN_RING,
+                0 /*default */,
+                UserHandle.USER_CURRENT) == 1) {
+            if (status != null) mBatteryLevel = status.level;
+            float cappedBattery = mBatteryLevel;
+
+            if (mBatteryLevel < 15) {
+                cappedBattery = 15;
+            }
+            else if (mBatteryLevel > 90) {
+                cappedBattery = 90;
+            }
+
+            final float hue = (cappedBattery - 15) * 1.6f;
+            mGlowPadView.setArc(mBatteryLevel * 3.6f, Color.HSVToColor(0x80, new float[]{ hue, 1.f, 1.f }));
+        } else {
+            mGlowPadView.setArc(0, 0);
         }
     }
 }

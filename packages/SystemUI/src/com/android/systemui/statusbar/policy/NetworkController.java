@@ -68,6 +68,10 @@ public class NetworkController extends BroadcastReceiver {
     static final boolean DEBUG = false;
     static final boolean CHATTY = true; // additional diagnostics, but not logspew
 
+
+    static final String STRICT_PERMISSION_PROPERTY = "persist.sys.strict_op_enable";
+    boolean mAppopsStrictEnabled = false;
+
     // telephony
     boolean mHspaDataDistinguishable;
     private TelephonyManager mPhone;
@@ -148,6 +152,8 @@ public class NetworkController extends BroadcastReceiver {
 
     private boolean mHideSignal;
     private boolean mUseAltSignal;
+    private boolean mHideAllSignals = false;
+    private boolean mLastHideAllSignals = false;
     private boolean mShow4gForLte;
 
     // our ui
@@ -354,7 +360,7 @@ public class NetworkController extends BroadcastReceiver {
     public void refreshSignalCluster(SignalCluster cluster) {
         cluster.setWifiIndicators(
                 // only show wifi in the cluster if connected or if wifi-only
-                mWifiEnabled && (mWifiConnected || !mHasMobileDataFeature),
+                !mHideAllSignals && (mWifiEnabled && (mWifiConnected || !mHasMobileDataFeature || mAppopsStrictEnabled)),
                 mWifiIconId,
                 mWifiActivityIconId,
                 mContentDescriptionWifi);
@@ -362,7 +368,7 @@ public class NetworkController extends BroadcastReceiver {
         if (mIsWimaxEnabled && mWimaxConnected) {
             // wimax is special
             cluster.setMobileDataIndicators(
-                    true,
+                    !mHideAllSignals,
                     mAlwaysShowCdmaRssi ? mPhoneSignalIconId : mWimaxIconId,
                     mMobileActivityIconId,
                     mDataTypeIconId,
@@ -372,7 +378,7 @@ public class NetworkController extends BroadcastReceiver {
         } else {
             // normal mobile data
             cluster.setMobileDataIndicators(
-                    mHasMobileDataFeature,
+                    !mHideAllSignals && mHasMobileDataFeature,
                     mShowPhoneRSSIForData ? mPhoneSignalIconId : mDataSignalIconId,
                     mMobileActivityIconId,
                     mDataTypeIconId,
@@ -900,6 +906,11 @@ public class NetworkController extends BroadcastReceiver {
             }
         }
 
+        if (mHideAllSignals){
+            iconId = 0;
+            visible = false;
+        }
+        
         // yuck - this should NOT be done by the status bar
         long ident = Binder.clearCallingIdentity();
         try {
@@ -984,7 +995,7 @@ public class NetworkController extends BroadcastReceiver {
                     info = mWifiManager.getConnectionInfo();
                 }
                 if (info != null) {
-                    mWifiSsid = huntForSsid(info);
+                    mWifiSsid = huntForSsid(mWifiManager, info);
                 } else {
                     mWifiSsid = null;
                 }
@@ -1001,6 +1012,7 @@ public class NetworkController extends BroadcastReceiver {
     }
 
     protected void updateWifiIcons() {
+        mAppopsStrictEnabled = SystemProperties.getBoolean(STRICT_PERMISSION_PROPERTY, false);
         if (mWifiConnected) {
             mWifiIconId = WifiIcons.WIFI_SIGNAL_STRENGTH[mInetCondition][mWifiLevel];
             mQSWifiIconId = WifiIcons.QS_WIFI_SIGNAL_STRENGTH[mInetCondition][mWifiLevel];
@@ -1018,13 +1030,13 @@ public class NetworkController extends BroadcastReceiver {
         }
     }
 
-    private String huntForSsid(WifiInfo info) {
+    protected static String huntForSsid(WifiManager manager, WifiInfo info) {
         String ssid = info.getSSID();
         if (ssid != null) {
             return ssid;
         }
         // OK, it's not in the connectionInfo; we have to go hunting for it
-        List<WifiConfiguration> networks = mWifiManager.getConfiguredNetworks();
+        List<WifiConfiguration> networks = manager.getConfiguredNetworks();
         for (WifiConfiguration net : networks) {
             if (net.networkId == info.getNetworkId()) {
                 return net.SSID;
@@ -1293,7 +1305,9 @@ public class NetworkController extends BroadcastReceiver {
                 mDataTypeIconId = R.drawable.stat_sys_data_connected_roam;
                 mQSDataTypeIconId = R.drawable.ic_qs_signal_r;
             }
-        } else if (mSimState == IccCardConstants.State.ABSENT) {
+        }
+
+        if (!mAirplaneMode && mSimState == IccCardConstants.State.ABSENT) {
             // look again; your radios are now sim cards
             mPhoneSignalIconId = mDataSignalIconId = mDataTypeIconId = mQSDataTypeIconId = 0;
             mQSPhoneSignalIconId = 0;
@@ -1339,6 +1353,7 @@ public class NetworkController extends BroadcastReceiver {
          || mLastDataTypeIconId             != mDataTypeIconId
          || mLastAirplaneMode               != mAirplaneMode
          || mLastLocale                     != mLocale
+         || mLastHideAllSignals             != mHideAllSignals
          || mLastSimIconId                  != mNoSimIconId)
         {
             // NB: the mLast*s will be updated later
@@ -1350,6 +1365,10 @@ public class NetworkController extends BroadcastReceiver {
             }
         }
 
+        if (mLastHideAllSignals != mHideAllSignals) {
+             mLastHideAllSignals = mHideAllSignals;
+        }
+        
         if (mLastAirplaneMode != mAirplaneMode) {
             mLastAirplaneMode = mAirplaneMode;
         }
@@ -1673,6 +1692,10 @@ public class NetworkController extends BroadcastReceiver {
                     Settings.System.getUriFor(Settings.System.STATUSBAR_SIGNAL_SHOW_4G_FOR_LTE),
                     mContext.getResources().getBoolean(com.android.internal.R.bool.config_show4GForLTE),
                     this);
+            resolver.registerContentObserver(
+                    Settings.System.getUriFor(Settings.System.STATUSBAR_HIDE_ALL_SIGNAL_BARS), false,
+                    this);
+                    
             updateSettings();
         }
 
@@ -1688,9 +1711,12 @@ public class NetworkController extends BroadcastReceiver {
                 Settings.System.STATUSBAR_HIDE_SIGNAL_BARS,false));
         mUseAltSignal = (Settings.System.getBoolean(mContext.getContentResolver(),
                 Settings.System.STATUSBAR_SIGNAL_CLUSTER_ALT, clustdefault));
+        mHideAllSignals = (Settings.System.getBoolean(mContext.getContentResolver(),
+                Settings.System.STATUSBAR_HIDE_ALL_SIGNAL_BARS,false));
         mShow4gForLte = (Settings.System.getBoolean(mContext.getContentResolver(),
                 Settings.System.STATUSBAR_SIGNAL_SHOW_4G_FOR_LTE,
                 mContext.getResources().getBoolean(com.android.internal.R.bool.config_show4GForLTE)));
+
         updateTelephonySignalStrength();
         updateDataNetType();
         updateDataIcon();

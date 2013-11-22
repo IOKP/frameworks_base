@@ -25,7 +25,6 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.CONFIGURE_WIFI_DISPLAY" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
-    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
 
     <!-- Networking and telephony -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -76,6 +75,10 @@
     <uses-permission android:name="android.permission.NFC" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
+    <!--Halo-->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+
+
     <!-- Secure Screenshot -->
     <protected-broadcast android:name="android.permission.SCREENSHOT" />
     <protected-broadcast android:name="android.intent.action.SCREENSHOT" />
@@ -111,7 +114,20 @@
             </intent-filter>
         </service>
 
+        <receiver android:name=".screenshot.TrashScreenshot"
+                android:exported="true" />
+
         <service android:name=".LoadAverageService"
+                android:exported="true" />
+
+        <service android:name=".screenstate.ScreenStateService"
+                android:exported="true" >
+            <intent-filter>
+               <android name="android.intent.action.SCREEN_STATE_SERVICE_UPDATE"/>
+            </intent-filter>
+        </service>
+
+        <service android:name=".CPUInfoService"
                 android:exported="true" />
 
         <service android:name=".ImageWallpaper"
@@ -228,24 +244,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="com.android.internal.category.PLATLOGO" />
-<!--            <category android:name="android.intent.category.LAUNCHER" />-->
-            </intent-filter>
-        </activity>
-
-	<!-- also ... started from ... somewhere -->
-        <activity
-            android:name=".UnicornSack"
-            android:exported="true"
-            android:label="UnicornSack"
-            android:icon="@drawable/redunicorn"
-            android:theme="@android:style/Theme.Wallpaper.NoTitleBar.Fullscreen"
-            android:hardwareAccelerated="true"
-            android:launchMode="singleInstance"
-            android:excludeFromRecents="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="com.android.internal.category.AOKPLOGO" />
 <!--            <category android:name="android.intent.category.LAUNCHER" />-->
             </intent-filter>
         </activity>
@@ -383,6 +381,10 @@
             </intent-filter>
         </activity>
 
+        <activity android:name="com.android.systemui.Transparent"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+	<!-- Active Display -->
         <activity android:name=".statusbar.policy.activedisplay.DummyActivity"
                   android:label=""
                   android:taskAffinity=""

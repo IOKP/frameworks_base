@@ -693,6 +693,9 @@ public class KeyguardHostView extends KeyguardViewBase {
             case Pattern:
                 messageId = R.string.kg_too_many_failed_pattern_attempts_dialog_message;
                 break;
+            case Gesture:
+                messageId = R.string.kg_too_many_failed_gesture_attempts_dialog_message;
+                break;
             case PIN:
                 messageId = R.string.kg_too_many_failed_pin_attempts_dialog_message;
                 break;
@@ -790,15 +793,26 @@ public class KeyguardHostView extends KeyguardViewBase {
      * @param turningOff true if the device is being turned off
      */
     void showPrimarySecurityScreen(boolean turningOff) {
-        SecurityMode securityMode = mSecurityModel.getSecurityMode();
-        if (DEBUG) Log.v(TAG, "showPrimarySecurityScreen(turningOff=" + turningOff + ")");
-        if (!turningOff &&
-                KeyguardUpdateMonitor.getInstance(mContext).isAlternateUnlockEnabled()) {
-            // If we're not turning off, then allow biometric alternate.
-            // We'll reload it when the device comes back on.
-            securityMode = mSecurityModel.getAlternateFor(securityMode);
+        final boolean lockBeforeUnlock = Settings.Secure.getIntForUser(mContext.getContentResolver(),
+                Settings.Secure.LOCK_BEFORE_UNLOCK, 0, UserHandle.USER_CURRENT) == 1;
+        final boolean isSimOrAccount = mCurrentSecuritySelection == SecurityMode.SimPin
+                || mCurrentSecuritySelection == SecurityMode.SimPuk
+                || mCurrentSecuritySelection == SecurityMode.Account
+                || mCurrentSecuritySelection == SecurityMode.Invalid;
+
+        if (lockBeforeUnlock && !isSimOrAccount) {
+            showSecurityScreen(SecurityMode.None);
+        } else {
+            SecurityMode securityMode = mSecurityModel.getSecurityMode();
+            if (DEBUG) Log.v(TAG, "showPrimarySecurityScreen(turningOff=" + turningOff + ")");
+            if (!turningOff &&
+                    KeyguardUpdateMonitor.getInstance(mContext).isAlternateUnlockEnabled()) {
+                // If we're not turning off, then allow biometric alternate.
+                // We'll reload it when the device comes back on.
+                securityMode = mSecurityModel.getAlternateFor(securityMode);
+            }
+            showSecurityScreen(securityMode);
         }
-        showSecurityScreen(securityMode);
     }
 
     /**
@@ -843,6 +857,7 @@ public class KeyguardHostView extends KeyguardViewBase {
                 case PIN:
                 case Account:
                 case Biometric:
+                case Gesture:
                     finish = true;
                     break;
 
@@ -1199,6 +1214,7 @@ public class KeyguardHostView extends KeyguardViewBase {
         switch (securityMode) {
             case None: return R.id.keyguard_selector_view;
             case Pattern: return R.id.keyguard_pattern_view;
+            case Gesture: return R.id.keyguard_gesture_view;
             case PIN: return R.id.keyguard_pin_view;
             case Password: return R.id.keyguard_password_view;
             case Biometric: return R.id.keyguard_face_unlock_view;
@@ -1221,6 +1237,7 @@ public class KeyguardHostView extends KeyguardViewBase {
         switch (securityMode) {
             case None: return R.layout.keyguard_selector_view;
             case Pattern: return R.layout.keyguard_pattern_view;
+            case Gesture: return R.layout.keyguard_gesture_view;
             case PIN: return R.layout.keyguard_pin_view;
             case Password: return R.layout.keyguard_password_view;
             case Biometric: return R.layout.keyguard_face_unlock_view;
@@ -1753,6 +1770,11 @@ public class KeyguardHostView extends KeyguardViewBase {
         return !configDisabled || isTestHarness || fileOverride;
     }
 
+    private boolean shouldEnableCameraKey() {
+        final boolean cameraOverride = Settings.System.getInt(getContext().getContentResolver(), Settings.System.CAMERA_UNLOCK_SCREEN, 0) == 1;
+        return cameraOverride;
+    }
+
     public void goToUserSwitcher() {
         mAppWidgetContainer.setCurrentPage(getWidgetPosition(R.id.keyguard_multi_user_selector));
     }
@@ -1765,6 +1787,15 @@ public class KeyguardHostView extends KeyguardViewBase {
     public boolean handleMenuKey() {
         // The following enables the MENU key to work for testing automation
         if (shouldEnableMenuKey()) {
+            showNextSecurityScreenOrFinish(false);
+            return true;
+        }
+        return false;
+    }
+
+    public boolean handleCameraKey() {
+        // The following enables the CAMERA key to work for testing automation
+        if (shouldEnableCameraKey()) {
             showNextSecurityScreenOrFinish(false);
             return true;
         }

@@ -933,6 +933,9 @@ public final class ActivityManagerService  extends ActivityManagerNative
     static final int USER_SWITCH_TIMEOUT_MSG = 36;
     static final int IMMERSIVE_MODE_LOCK_MSG = 37;
 
+    static final int POST_PRIVACY_NOTIFICATION_MSG = 40;
+    static final int CANCEL_PRIVACY_NOTIFICATION_MSG = 41;
+
     static final int FIRST_ACTIVITY_STACK_MSG = 100;
     static final int FIRST_BROADCAST_QUEUE_MSG = 200;
     static final int FIRST_COMPAT_MODE_MSG = 300;
@@ -1439,6 +1442,74 @@ public final class ActivityManagerService  extends ActivityManagerNative
                 }
                 break;
             }
+            case POST_PRIVACY_NOTIFICATION_MSG: {
+                INotificationManager inm = NotificationManager.getService();
+                if (inm == null) {
+                    return;
+                }
+
+                ActivityRecord root = (ActivityRecord)msg.obj;
+                ProcessRecord process = root.app;
+                if (process == null) {
+                    return;
+                }
+
+                try {
+                    Context context = mContext.createPackageContext(process.info.packageName, 0);
+
+                    String text = mContext.getString(
+                            msg.arg1 == AppOpsManager.PRIVACY_GUARD_ENABLED ?
+                            R.string.privacy_guard_notification_detail
+                            : R.string.privacy_guard_custom_notification_detail,
+                            context.getApplicationInfo().loadLabel(context.getPackageManager()));
+
+                    String title = mContext.getString(R.string.privacy_guard_notification);
+
+                    Intent infoIntent = new Intent(Settings.ACTION_APP_OPS_DETAILS_SETTINGS,
+                            Uri.fromParts("package", root.packageName, null));
+
+                    Notification notification = new Notification();
+                    notification.icon = AppOpsManager.getPrivacyGuardIconResId(msg.arg1);
+                    notification.when = 0;
+                    notification.flags = Notification.FLAG_ONGOING_EVENT;
+                    notification.priority = Notification.PRIORITY_LOW;
+                    notification.defaults = 0;
+                    notification.sound = null;
+                    notification.vibrate = null;
+                    notification.setLatestEventInfo(getUiContext(),
+                            title, text,
+                            PendingIntent.getActivityAsUser(mContext, 0, infoIntent,
+                                    PendingIntent.FLAG_CANCEL_CURRENT, null,
+                                    new UserHandle(root.userId)));
+
+                    try {
+                        int[] outId = new int[1];
+                        inm.enqueueNotificationWithTag("android", "android", null,
+                                R.string.privacy_guard_notification,
+                                notification, outId, root.userId);
+                    } catch (RuntimeException e) {
+                        Slog.w(ActivityManagerService.TAG,
+                                "Error showing notification for privacy guard", e);
+                    } catch (RemoteException e) {
+                    }
+                } catch (NameNotFoundException e) {
+                    Slog.w(TAG, "Unable to create context for privacy guard notification", e);
+                }
+            } break;
+            case CANCEL_PRIVACY_NOTIFICATION_MSG: {
+                INotificationManager inm = NotificationManager.getService();
+                if (inm == null) {
+                    return;
+                }
+                try {
+                    inm.cancelNotificationWithTag("android", null,
+                            R.string.privacy_guard_notification,  msg.arg1);
+                } catch (RuntimeException e) {
+                    Slog.w(ActivityManagerService.TAG,
+                            "Error canceling notification for service", e);
+                } catch (RemoteException e) {
+                }
+            } break;
             }
         }
     };
@@ -6298,29 +6369,6 @@ public final class ActivityManagerService  extends ActivityManagerNative
         }
 
         return -1;
-    }
-
-    public IBinder getActivityForTask(int task, boolean onlyRoot) {
-        synchronized(this) {
-            return getActivityForTaskLocked(task, onlyRoot);
-        }
-    }
-
-    IBinder getActivityForTaskLocked(int task, boolean onlyRoot) {
-        final int N = mMainStack.mHistory.size();
-        TaskRecord lastTask = null;
-        for (int i=0; i<N; i++) {
-            ActivityRecord r = (ActivityRecord)mMainStack.mHistory.get(i);
-            if (r.task.taskId == task) {
-                if (!onlyRoot || lastTask != r.task) {
-                    return r.appToken;
-                }
-                return null;
-            }
-            lastTask = r.task;
-        }
-
-        return null;
     }
 
     // =========================================================
@@ -12832,26 +12880,6 @@ public final class ActivityManagerService  extends ActivityManagerNative
             // And we need to make sure at this point that all other activities
             // are made visible with the correct configuration.
             mMainStack.ensureActivitiesVisibleLocked(starting, changes);
-
-            if (mWindowManager.isTaskSplitView(starting.task.taskId)) {
-                Log.e("XPLOD", "Split view restoring task " + starting.task.taskId + " -- " + mIgnoreSplitViewUpdate.size());
-                ActivityRecord second = mMainStack.topRunningActivityLocked(starting);
-                if (mWindowManager.isTaskSplitView(second.task.taskId)) {
-                    Log.e("XPLOD", "Split view restoring also task " + second.task.taskId);
-                    kept = kept && mMainStack.ensureActivityConfigurationLocked(second, changes);
-                    mMainStack.ensureActivitiesVisibleLocked(second, changes);
-                    if (mIgnoreSplitViewUpdate.contains(starting.task.taskId)) {
-                        Log.e("XPLOD", "Task "+ starting.task.taskId + " resuming ignored");
-                        mIgnoreSplitViewUpdate.removeAll(Collections.singleton((Integer) starting.task.taskId));
-                    } else {
-                        mMainStack.moveTaskToFrontLocked(second.task, null, null);
-                        mIgnoreSplitViewUpdate.add(starting.task.taskId);
-                        mIgnoreSplitViewUpdate.add(second.task.taskId);
-                        mMainStack.resumeTopActivityLocked(null);
-                        mMainStack.moveTaskToFrontLocked(starting.task, null, null);
-                    }
-                }
-            }
         }
         
         if (values != null && mWindowManager != null) {
@@ -12860,8 +12888,6 @@ public final class ActivityManagerService  extends ActivityManagerNative
         
         return kept;
     }
-
-private ArrayList<Integer> mIgnoreSplitViewUpdate = new ArrayList<Integer>();
 
     /**
      * Decide based on the configuration whether we should shouw the ANR,

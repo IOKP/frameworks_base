@@ -55,6 +55,18 @@
             android:contentDescription="@string/accessibility_compatibility_zoom_button"
             />
 
+        <include layout="@layout/network_stats" />
+
+        <com.android.systemui.statusbar.policy.Traffic
+            android:id="@+id/traffic"
+            android:textAppearance="@style/TextAppearance.StatusBar.Traffic"
+            android:textSize="16sp"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:singleLine="true"
+            android:layout_marginRight="4dp"
+            android:gravity="left|center_vertical"/>
+
         <com.android.systemui.statusbar.tablet.NotificationIconArea
             android:id="@+id/notificationIcons"
             android:layout_width="wrap_content"
@@ -90,7 +102,7 @@
             android:gravity="center_vertical|start"
             />
         <com.android.systemui.statusbar.policy.ClockCenter
-            android:id="@+id/clock"
+            android:id="@+id/center_clock"
             android:textAppearance="@style/TextAppearance.StatusBar.Clock"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
@@ -121,10 +133,6 @@
             android:orientation="horizontal"
             android:gravity="center"
             >
-            <include layout="@layout/network_stats"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                />
             <include layout="@layout/signal_cluster_view" 
                 android:id="@+id/signal_cluster"
                 android:layout_width="wrap_content"

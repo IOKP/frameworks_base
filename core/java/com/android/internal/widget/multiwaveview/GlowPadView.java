@@ -30,6 +30,7 @@ import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.StateListDrawable;
 import android.graphics.Paint;
 import android.graphics.Paint.Align;
 import android.graphics.Path;
@@ -163,6 +164,10 @@ public class GlowPadView extends View {
     private boolean mDragging;
     private int mNewTargetResources;
     private ArrayList<TargetDrawable> mNewTargetDrawables;
+
+    private Paint mArcPaint;
+    private RectF mArcRect;
+    private float mArcAngle = 0f;
 
     private class AnimationBundle extends ArrayList<Tweener> {
         private static final long serialVersionUID = 0xA84D78726F127468L;
@@ -324,6 +329,14 @@ public class GlowPadView extends View {
         mPointCloud.makePointCloud(mInnerRadius, mOuterRadius);
         mPointCloud.glowManager.setRadius(mGlowRadius);
 
+        mArcPaint = new Paint();
+        mArcPaint.setStrokeWidth(10.0f);
+        mArcPaint.setStyle(Paint.Style.STROKE);
+        mArcRect = new RectF(mHandleDrawable.getPositionX() - mHandleDrawable.getWidth()/2,
+                                 mHandleDrawable.getPositionY() - mHandleDrawable.getHeight()/2,
+                                 mHandleDrawable.getPositionX() + mHandleDrawable.getWidth()/2,
+                                 mHandleDrawable.getPositionY() + mHandleDrawable.getHeight()/2);
+
         mPaintText = new Paint();
         mPaintText.setAntiAlias(true);
         mPaintText.setColor(res.getColor(android.R.color.white));
@@ -468,6 +481,10 @@ public class GlowPadView extends View {
             if (mPadDrawable != null) {
                 mPadDrawable.setColorFilter(null);
                 mPadDrawable.setColorFilter(color, PorterDuff.Mode.SRC_ATOP);
+                StateListDrawable stateListDrawable = new StateListDrawable();
+                stateListDrawable.addState(TargetDrawable.STATE_INACTIVE, mPadDrawable);
+                stateListDrawable.addState(TargetDrawable.STATE_ACTIVE, mPadDrawable);
+                stateListDrawable.addState(TargetDrawable.STATE_FOCUSED, mPadDrawable);
                 TargetDrawable handle = new TargetDrawable(getResources(), mPadDrawable);
                 setHandleDrawable(handle);
             }
@@ -1321,6 +1338,15 @@ public class GlowPadView extends View {
         }
         mHandleDrawable.draw(canvas);
 
+        if (mArcAngle > 0 && mHandleDrawable.getAlpha() > 0) {
+            mArcRect.set(mHandleDrawable.getPositionX() - mHandleDrawable.getWidth()/3,
+                    mHandleDrawable.getPositionY() - mHandleDrawable.getHeight()/3,
+                    mHandleDrawable.getPositionX() + mHandleDrawable.getWidth()/3,
+                    mHandleDrawable.getPositionY() + mHandleDrawable.getHeight()/3);
+
+            canvas.drawArc(mArcRect, -90, mArcAngle, false, mArcPaint);
+        }
+
         if (!TextUtils.isEmpty(mHandleText) && mPaintText.getAlpha() != 0) {
             float x = mHandleDrawable.getPositionX();
             float y = mHandleDrawable.getPositionY();
@@ -1517,5 +1543,10 @@ public class GlowPadView extends View {
             replaceTargetDrawables(mContext.getResources(), existingResId, existingResId);
         }
         return replaced;
+    }
+
+    public void setArc(float angle, int color) {
+        mArcAngle = angle;
+        mArcPaint.setColor(color);
     }
 }

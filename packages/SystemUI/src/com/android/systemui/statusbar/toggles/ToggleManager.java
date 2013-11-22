@@ -100,7 +100,8 @@ public class ToggleManager {
     public static final String CUSTOM_TOGGLE = "CUSTOM";
     public static final String STAYAWAKE_TOGGLE = "STAYAWAKE";
     public static final String WIRELESS_ADB_TOGGLE = "WIRELESSADB";
-    public static final String DARKUI_TOGGLE = "DARKUI";
+    public static final String MUSIC_TOGGLE = "MUSIC";
+    public static final String PIE_TOGGLE = "PIE";
 
     private int mStyle;
 
@@ -171,7 +172,8 @@ public class ToggleManager {
             toggleMap.put(CUSTOM_TOGGLE, CustomToggle.class);
             toggleMap.put(STAYAWAKE_TOGGLE, StayAwakeToggle.class);
             toggleMap.put(WIRELESS_ADB_TOGGLE, WirelessAdbToggle.class);
-            toggleMap.put(DARKUI_TOGGLE, DarkUIToggle.class);
+            toggleMap.put(MUSIC_TOGGLE, MusicToggle.class);
+            toggleMap.put(PIE_TOGGLE, PieToggle.class);
             // toggleMap.put(BT_TETHER_TOGGLE, null);
         }
         return toggleMap;

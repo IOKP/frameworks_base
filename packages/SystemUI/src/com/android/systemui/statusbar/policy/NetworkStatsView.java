@@ -56,10 +56,6 @@ public class NetworkStatsView extends LinearLayout {
 
     SettingsObserver mSettingsObserver;
 
-    protected int mTrafficColor = com.android.internal.R.color.holo_blue_light;
-    protected int defaultColor;
-    protected boolean customColor;
-
     public NetworkStatsView(Context context) {
         this(context, null);
     }
@@ -75,10 +71,6 @@ public class NetworkStatsView extends LinearLayout {
         mLastTx = TrafficStats.getTotalTxBytes();
         mHandler = new Handler();
         mSettingsObserver = new SettingsObserver(mHandler);
-        mSettingsObserver.observe();
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
-        context.registerReceiver(mConnectivityReceiver, filter);
     }
 
     // runnable to invalidate view via mHandler.postDelayed() call
@@ -103,12 +95,8 @@ public class NetworkStatsView extends LinearLayout {
                     Settings.System.STATUS_BAR_NETWORK_STATS), false, this);
             resolver.registerContentObserver(Settings.System.getUriFor(
                     Settings.System.STATUS_BAR_NETWORK_STATS_UPDATE_INTERVAL), false, this);
-            resolver.registerContentObserver(Settings.System
-                    .getUriFor(Settings.System.STATUSBAR_CLOCK_COLOR), false, this);
-            resolver.registerContentObserver(Settings.System
-                    .getUriFor(Settings.System.STATUS_ICON_COLOR), false, this);
-            resolver.registerContentObserver(Settings.System
-                    .getUriFor(Settings.System.ICON_COLOR_BEHAVIOR), false, this);
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.STATUS_BAR_NETWORK_STATS_TEXT_COLOR), false, this);
             onChange(true);
         }
 
@@ -202,7 +190,7 @@ public class NetworkStatsView extends LinearLayout {
     }
 
     private void updateStats() {
-        if (!mActivated || !mAttached) {
+        if (!mActivated || !mAttached || !mIsScreenOn) {
             mHandler.removeCallbacks(mUpdateRunnable);
             return;
         }

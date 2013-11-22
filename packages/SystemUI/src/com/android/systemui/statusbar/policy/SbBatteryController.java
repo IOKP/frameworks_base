@@ -59,7 +59,6 @@ public class SbBatteryController extends LinearLayout {
     private ImageView mBatteryIcon;
     private TextView mBatteryText;
     private TextView mBatteryCenterText;
-    private TextView mBatteryBigText;
     private ViewGroup mBatteryGroup;
     private TextView mBatteryTextOnly;
     private TextView mBatteryTextOnly_Low;
@@ -73,18 +72,17 @@ public class SbBatteryController extends LinearLayout {
     public static final int STYLE_ICON_ONLY = 0;
     public static final int STYLE_TEXT_ONLY = 1;
     public static final int STYLE_ICON_TEXT = 2;
-    public static final int STYLE_ICON_BIG_TEXT = 3;
-    public static final int STYLE_ICON_CENTERED_TEXT = 4;
-    public static final int STYLE_ICON_CIRCLE = 5;
-    public static final int STYLE_ICON_RACING_RB = 6;
-    public static final int STYLE_ICON_GAUGE_RB = 7;
-    public static final int STYLE_ICON_PLANET_RB = 8;
-    public static final int STYLE_ICON_SLIDER_RB = 9;
-    public static final int STYLE_ICON_BRICK_RB = 10;
-    public  static final int BATTERY_STYLE_CIRCLE = 11;
-    public  static final int BATTERY_STYLE_CIRCLE_PERCENT = 12;
-    public  static final int BATTERY_STYLE_DOTTED_CIRCLE_PERCENT = 13;
-    public static final int STYLE_HIDE = 14;
+    public static final int STYLE_ICON_CENTERED_TEXT = 3;
+    public static final int STYLE_ICON_CIRCLE = 4;
+    public static final int STYLE_ICON_RACING_RB = 5;
+    public static final int STYLE_ICON_GAUGE_RB = 6;
+    public static final int STYLE_ICON_PLANET_RB = 7;
+    public static final int STYLE_ICON_SLIDER_RB = 8;
+    public static final int STYLE_ICON_BRICK_RB = 9;
+    public  static final int BATTERY_STYLE_CIRCLE = 10;
+    public  static final int BATTERY_STYLE_CIRCLE_PERCENT = 11;
+    public  static final int BATTERY_STYLE_DOTTED_CIRCLE_PERCENT = 12;
+    public static final int STYLE_HIDE = 13;
 
     public SbBatteryController(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -98,7 +96,6 @@ public class SbBatteryController extends LinearLayout {
         mBatteryGroup = (ViewGroup) findViewById(R.id.battery_combo);
         mBatteryIcon = (ImageView) findViewById(R.id.battery);
         mBatteryText = (TextView) findViewById(R.id.battery_text);
-        mBatteryBigText = (TextView) findViewById(R.id.battery_text_big);
         mBatteryCenterText = (TextView) findViewById(R.id.battery_text_center);
         mBatteryTextOnly = (TextView) findViewById(R.id.battery_text_only);
         mBatteryTextOnly_Low = (TextView) findViewById(R.id.battery_text_only_low);
@@ -202,7 +199,6 @@ public class SbBatteryController extends LinearLayout {
         if (mBatteryGroup != null) {
             mBatteryText.setText(Integer.toString(level));
             mBatteryCenterText.setText(Integer.toString(level));
-            mBatteryBigText.setText(Integer.toString(level) + "%");
             SpannableStringBuilder formatted = new SpannableStringBuilder(
                     Integer.toString(level) + "%");
             CharacterStyle style = new RelativeSizeSpan(0.7f); // beautiful
@@ -271,111 +267,89 @@ public class SbBatteryController extends LinearLayout {
             case STYLE_ICON_ONLY:
                 mBatteryCenterText.setVisibility(View.GONE);
                 mBatteryText.setVisibility(View.GONE);
-                mBatteryBigText.setVisibility(View.GONE);
                 mBatteryIcon.setVisibility(View.VISIBLE);
                 setVisibility(View.VISIBLE);
                 break;
             case STYLE_TEXT_ONLY:
                 mBatteryText.setVisibility(View.GONE);
-                mBatteryBigText.setVisibility(View.GONE);
                 mBatteryCenterText.setVisibility(View.GONE);
                 mBatteryIcon.setVisibility(View.GONE);
                 setVisibility(View.VISIBLE);
                 break;
             case STYLE_ICON_TEXT:
                 mBatteryText.setVisibility(View.VISIBLE);
-                mBatteryBigText.setVisibility(View.GONE);
                 mBatteryCenterText.setVisibility(View.GONE);
                 mBatteryIcon.setVisibility(View.VISIBLE);
                 setVisibility(View.VISIBLE);
                 break;
             case STYLE_ICON_CENTERED_TEXT:
                 mBatteryText.setVisibility(View.GONE);
-                mBatteryBigText.setVisibility(View.GONE);
                 mBatteryCenterText.setVisibility(View.VISIBLE);
                 mBatteryIcon.setVisibility(View.VISIBLE);
                 setVisibility(View.VISIBLE);
                 break;
             case STYLE_HIDE:
                 mBatteryText.setVisibility(View.GONE);
-                mBatteryBigText.setVisibility(View.GONE);
                 mBatteryCenterText.setVisibility(View.GONE);
                 mBatteryIcon.setVisibility(View.GONE);
                 setVisibility(View.GONE);
                 break;
             case STYLE_ICON_CIRCLE:
                 mBatteryText.setVisibility(View.GONE);
-                mBatteryBigText.setVisibility(View.GONE);
-                mBatteryCenterText.setVisibility(View.GONE);
-                mBatteryIcon.setVisibility(View.VISIBLE);
-                setVisibility(View.VISIBLE);
-                break;
-            case STYLE_ICON_BIG_TEXT:
-                mBatteryText.setVisibility(View.GONE);
-                mBatteryBigText.setVisibility(View.VISIBLE);
                 mBatteryCenterText.setVisibility(View.GONE);
                 mBatteryIcon.setVisibility(View.VISIBLE);
                 setVisibility(View.VISIBLE);
                 break;
             case STYLE_ICON_RACING_RB:
                 mBatteryText.setVisibility(View.GONE);
-                mBatteryBigText.setVisibility(View.GONE);
                 mBatteryCenterText.setVisibility(View.GONE);
                 mBatteryIcon.setVisibility(View.VISIBLE);
                 setVisibility(View.VISIBLE);
                 break;
             case STYLE_ICON_GAUGE_RB:
                 mBatteryText.setVisibility(View.GONE);
-                mBatteryBigText.setVisibility(View.GONE);
                 mBatteryCenterText.setVisibility(View.GONE);
                 mBatteryIcon.setVisibility(View.VISIBLE);
                 setVisibility(View.VISIBLE);
                 break;
             case STYLE_ICON_PLANET_RB:
                 mBatteryText.setVisibility(View.GONE);
-                mBatteryBigText.setVisibility(View.GONE);
                 mBatteryCenterText.setVisibility(View.GONE);
                 mBatteryIcon.setVisibility(View.VISIBLE);
                 setVisibility(View.VISIBLE);
                 break;
             case STYLE_ICON_SLIDER_RB:
                 mBatteryText.setVisibility(View.GONE);
-                mBatteryBigText.setVisibility(View.GONE);
                 mBatteryCenterText.setVisibility(View.GONE);
                 mBatteryIcon.setVisibility(View.VISIBLE);
                 setVisibility(View.VISIBLE);
                 break;
             case STYLE_ICON_BRICK_RB:
                 mBatteryText.setVisibility(View.GONE);
-                mBatteryBigText.setVisibility(View.GONE);
                 mBatteryCenterText.setVisibility(View.GONE);
                 mBatteryIcon.setVisibility(View.VISIBLE);
                 setVisibility(View.VISIBLE);
                 break;
 	    case BATTERY_STYLE_CIRCLE:
                 mBatteryText.setVisibility(View.GONE);
-                mBatteryBigText.setVisibility(View.GONE);
                 mBatteryCenterText.setVisibility(View.GONE);
                 mBatteryIcon.setVisibility(View.GONE);
                 setVisibility(View.VISIBLE);
                 break;
 	    case BATTERY_STYLE_CIRCLE_PERCENT:
                 mBatteryText.setVisibility(View.GONE);
-                mBatteryBigText.setVisibility(View.GONE);
                 mBatteryCenterText.setVisibility(View.GONE);
                 mBatteryIcon.setVisibility(View.GONE);
                 setVisibility(View.VISIBLE);
                 break;
 	    case BATTERY_STYLE_DOTTED_CIRCLE_PERCENT:
                 mBatteryText.setVisibility(View.GONE);
-                mBatteryBigText.setVisibility(View.GONE);
                 mBatteryCenterText.setVisibility(View.GONE);
                 mBatteryIcon.setVisibility(View.GONE);
                 setVisibility(View.VISIBLE);
                 break;
             default:
                 mBatteryText.setVisibility(View.GONE);
-                mBatteryBigText.setVisibility(View.GONE);
                 mBatteryCenterText.setVisibility(View.GONE);
                 mBatteryIcon.setVisibility(View.VISIBLE);
                 setVisibility(View.VISIBLE);

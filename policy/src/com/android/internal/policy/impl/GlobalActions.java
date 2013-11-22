@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (C) 2011 David van Tonder
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -309,7 +310,7 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
         // first: power off
         mItems.add(
             new SinglePressAction(
-                    com.android.internal.R.drawable.ic_lock_power_off,
+                    R.drawable.ic_lock_power_off,
                     R.string.global_action_power_off) {
 
                 public void onPress() {
@@ -333,29 +334,24 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
 
         // next: reboot
         mItems.add(
-                new SinglePressAction(
-                        com.android.internal.R.drawable.ic_lock_reboot,
-                        com.android.internal.R.string.reboot) {
+            new SinglePressAction(R.drawable.ic_lock_reboot, R.string.global_action_reboot) {
+                public void onPress() {
+                    mWindowManagerFuncs.reboot("null");
+                }
 
-                    @Override
-                    public boolean showDuringKeyguard() {
-                        if (mShowRebootOnLock) {
-                            return true;
-                        } else {
-                            return false;
-                        }
-                    }
+                public boolean showBeforeProvisioning() {
+                    return true;
+                }
 
-                    @Override
-                    public boolean showBeforeProvisioning() {
+                @Override
+                public boolean showDuringKeyguard() {
+                    if (mShowRebootOnLock) {
                         return true;
+                    } else {
+                        return false;
                     }
-
-                    @Override
-                    public void onPress() {
-                        createRebootDialog().show();
-                    }
-                });
+                }
+            });
 
         // next: profile - only shown if enabled, which is true by default
         if (Settings.System.getInt(mContext.getContentResolver(), SYSTEM_PROFILES_ENABLED, 1) == 1) {
@@ -1513,8 +1509,8 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
     }
 
     private AlertDialog createRebootDialog() {
-        final String[] rebootOptions = mContext.getResources().getStringArray(R.array.reboot_options);
-        final String[] rebootReasons = mContext.getResources().getStringArray(R.array.reboot_values);
+        final String[] rebootOptions = mContext.getResources().getStringArray(R.array.shutdown_reboot_options);
+        final String[] rebootReasons = mContext.getResources().getStringArray(R.array.shutdown_reboot_actions);
 
         AlertDialog d = new AlertDialog.Builder(getUiContext())
                 .setSingleChoiceItems(rebootOptions, 0,

@@ -26,10 +26,24 @@ LOCAL_PATH := $(call my-dir)
 # TODO: find a more appropriate way to do this.
 framework_res_source_path := APPS/framework-res_intermediates/src
 
+# These will be included in framework2 to avoid issues with the limit
+# on the number of classes/dex
+SECONDARY_FRAMEWORKS_SUBDIRS := \
+        core/java/android/test \
+        core/java/android/speech/srec \
+        core/java/com/android/internal/http/multipart \
+        media/java/android/media/videoeditor \
+        media/java/android/media/audiofx \
+        media/mca/effect/java/android/media/effect \
+        media/mca/effect/java/android/media/effect/effects
+
 include $(CLEAR_VARS)
 
 # FRAMEWORKS_BASE_SUBDIRS comes from build/core/pathmap.mk
 LOCAL_SRC_FILES := $(call find-other-java-files,$(FRAMEWORKS_BASE_SUBDIRS))
+SECONDARY_SRC_FILES := $(call find-other-java-files,$(SECONDARY_FRAMEWORKS_SUBDIRS))
+
+LOCAL_SRC_FILES := $(filter-out $(SECONDARY_SRC_FILES),$(LOCAL_SRC_FILES))
 
 # EventLogTags files.
 LOCAL_SRC_FILES += \
@@ -69,11 +83,7 @@ LOCAL_SRC_FILES += \
 	core/java/android/app/IBackupAgent.aidl \
 	core/java/android/app/IInstrumentationWatcher.aidl \
 	core/java/android/app/INotificationManager.aidl \
-<<<<<<< HEAD
     core/java/android/app/IProfileManager.aidl \
-=======
-        core/java/android/app/IProfileManager.aidl \
->>>>>>> faf42a713f82c54e8923549ecdf3b1af5b6803ca
 	core/java/android/app/IProcessObserver.aidl \
 	core/java/android/app/ISearchManager.aidl \
 	core/java/android/app/ISearchManagerCallback.aidl \
@@ -127,8 +137,10 @@ LOCAL_SRC_FILES += \
 	core/java/android/content/pm/IPackageStatsObserver.aidl \
 	core/java/android/database/IContentObserver.aidl \
 	core/java/android/hardware/ISerialManager.aidl \
+	core/java/android/hardware/display/IDisplayDevice.aidl \
 	core/java/android/hardware/display/IDisplayManager.aidl \
 	core/java/android/hardware/display/IDisplayManagerCallback.aidl \
+	core/java/android/hardware/display/IRemoteDisplayAdapter.aidl \
 	core/java/android/hardware/input/IInputManager.aidl \
 	core/java/android/hardware/input/IInputDevicesChangedListener.aidl \
 	core/java/android/hardware/location/IGeofenceHardware.aidl \
@@ -298,6 +310,7 @@ $(full_classes_compiled_jar): $(framework_res_R_stamp)
 $(LOCAL_INSTALLED_MODULE): | $(dir $(LOCAL_INSTALLED_MODULE))framework-res.apk
 
 framework_built := $(call java-lib-deps,framework)
+framework_built += $(call java-lib-deps,framework2)
 
 # AIDL files to be preprocessed and included in the SDK,
 # relative to the root of the build tree.
@@ -308,13 +321,8 @@ aidl_files := \
 	frameworks/base/core/java/android/accounts/IAccountAuthenticator.aidl \
 	frameworks/base/core/java/android/accounts/IAccountAuthenticatorResponse.aidl \
 	frameworks/base/core/java/android/app/Notification.aidl \
-<<<<<<< HEAD
     frameworks/base/core/java/android/app/NotificationGroup.aidl \
     frameworks/base/core/java/android/app/Profile.aidl \
-=======
-        frameworks/base/core/java/android/app/NotificationGroup.aidl \
-        frameworks/base/core/java/android/app/Profile.aidl \
->>>>>>> faf42a713f82c54e8923549ecdf3b1af5b6803ca
 	frameworks/base/core/java/android/app/PendingIntent.aidl \
 	frameworks/base/core/java/android/appwidget/AppWidgetProviderInfo.aidl \
 	frameworks/base/core/java/android/bluetooth/BluetoothDevice.aidl \
@@ -454,6 +462,7 @@ framework_docs_LOCAL_API_CHECK_JAVA_LIBRARIES := \
 	core \
 	ext \
 	framework \
+	framework2 \
 	mms-common \
 	telephony-common \
 	voip-common
@@ -772,7 +781,7 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:=$(framework_docs_LOCAL_SRC_FILES)
 LOCAL_INTERMEDIATE_SOURCES:=$(framework_docs_LOCAL_INTERMEDIATE_SOURCES)
-LOCAL_JAVA_LIBRARIES:=$(framework_docs_LOCAL_JAVA_LIBRARIES) framework
+LOCAL_JAVA_LIBRARIES:=$(framework_docs_LOCAL_JAVA_LIBRARIES) framework framework2
 LOCAL_MODULE_CLASS:=$(framework_docs_LOCAL_MODULE_CLASS)
 LOCAL_DROIDDOC_SOURCE_PATH:=$(framework_docs_LOCAL_DROIDDOC_SOURCE_PATH)
 LOCAL_DROIDDOC_HTML_DIR:=$(framework_docs_LOCAL_DROIDDOC_HTML_DIR)
@@ -822,6 +831,27 @@ LOCAL_DX_FLAGS := --core-library
 
 include $(BUILD_JAVA_LIBRARY)
 
+include $(CLEAR_VARS)
+
+# FRAMEWORKS_BASE_SUBDIRS comes from build/core/pathmap.mk
+LOCAL_SRC_FILES := $(call find-other-java-files,$(SECONDARY_FRAMEWORKS_SUBDIRS))
+
+LOCAL_NO_STANDARD_LIBRARIES := true
+LOCAL_JAVA_LIBRARIES := bouncycastle core core-junit ext framework
+
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE := framework2
+LOCAL_MODULE_CLASS := JAVA_LIBRARIES
+
+LOCAL_NO_EMMA_INSTRUMENT := true
+LOCAL_NO_EMMA_COMPILE := true
+
+#LOCAL_JARJAR_RULES := $(LOCAL_PATH)/jarjar-rules.txt
+
+LOCAL_DX_FLAGS := --core-library
+
+include $(BUILD_JAVA_LIBRARY)
+
 # Include subdirectory makefiles
 # ============================================================
 
@@ -830,3 +860,4 @@ include $(BUILD_JAVA_LIBRARY)
 ifeq (,$(ONE_SHOT_MAKEFILE))
 include $(call first-makefiles-under,$(LOCAL_PATH))
 endif
+

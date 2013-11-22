@@ -101,8 +101,6 @@ public class ActiveDisplayView extends FrameLayout {
 
     private static final int MAX_OVERFLOW_ICONS = 8;
 
-    private static final long DISPLAY_TIMEOUT = 8000L;
-
     private static final int HIDE_NOTIFICATIONS_BELOW_SCORE = Notification.PRIORITY_LOW;
 
     // the different pocket mode options
@@ -143,6 +141,7 @@ public class ActiveDisplayView extends FrameLayout {
     private Sensor mProximitySensor;
     private boolean mProximityIsFar = true;
     private boolean mIsInBrightLight = false;
+    private boolean mWakedByPocketMode = false;
     private LinearLayout mOverflowNotifications;
     private LayoutParams mRemoteViewLayoutParams;
     private int mIconSize;
@@ -160,6 +159,7 @@ public class ActiveDisplayView extends FrameLayout {
     private boolean mHideLowPriorityNotifications = false;
     private int mPocketMode = POCKET_MODE_OFF;
     private long mRedisplayTimeout = 0;
+    private long mDisplayActiveTimeout = 10000L;
     private float mInitialBrightness = 1f;
     private int mBrightnessMode = -1;
     private int mUserBrightnessLevel = -1;
@@ -175,9 +175,11 @@ public class ActiveDisplayView extends FrameLayout {
             if (shouldShowNotification() && isValidNotification(sbn)) {
                 // need to make sure either the screen is off or the user is currently
                 // viewing the notifications
-                if (ActiveDisplayView.this.getVisibility() == View.VISIBLE
-                        || !isScreenOn())
-                    showNotification(sbn, true);
+                if (!isCallIncoming() && !isOnCall()) {
+                    if (ActiveDisplayView.this.getVisibility() == View.VISIBLE
+                            || !isScreenOn())
+                        showNotification(sbn, true);
+                }
             }
         }
         @Override
@@ -201,6 +203,7 @@ public class ActiveDisplayView extends FrameLayout {
 
         public void onTrigger(final View v, final int target) {
             if (target == UNLOCK_TARGET) {
+                mWakedByPocketMode = false;
                 mNotification = null;
                 hideNotificationView();
                 if (!mKeyguardManager.isKeyguardSecure()) {
@@ -216,6 +219,7 @@ public class ActiveDisplayView extends FrameLayout {
                     }
                 }
             } else if (target == OPEN_APP_TARGET) {
+                mWakedByPocketMode = false;
                 hideNotificationView();
                 if (!mKeyguardManager.isKeyguardSecure()) {
                     sendUnlockBroadcast();
@@ -235,10 +239,6 @@ public class ActiveDisplayView extends FrameLayout {
             Intent u = new Intent();
             u.setAction("com.android.lockscreen.ACTION_UNLOCK_RECEIVER");
             mContext.sendBroadcastAsUser(u, UserHandle.ALL);
-        }
-
-        public void onTargetChange(final View v, final int target) {
-            // just a stub - bic spry!!
         }
 
         public void onReleased(final View v, final int handle) {
@@ -272,6 +272,10 @@ public class ActiveDisplayView extends FrameLayout {
 
         }
 
+        public void onTargetChange(View v, int whichHandle) {
+
+        }
+
     };
 
     /**
@@ -297,6 +301,8 @@ public class ActiveDisplayView extends FrameLayout {
                     Settings.System.ACTIVE_DISPLAY_POCKET_MODE), false, this);
             resolver.registerContentObserver(Settings.System.getUriFor(
                     Settings.System.ACTIVE_DISPLAY_REDISPLAY), false, this);
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.ACTIVE_DISPLAY_DISPLAYACTIVE), false, this);
             resolver.registerContentObserver(Settings.System.getUriFor(
                     Settings.System.ACTIVE_DISPLAY_BRIGHTNESS), false, this);
             resolver.registerContentObserver(Settings.System.getUriFor(
@@ -337,6 +343,8 @@ public class ActiveDisplayView extends FrameLayout {
                     resolver, Settings.System.ACTIVE_DISPLAY_POCKET_MODE, POCKET_MODE_OFF);
             mRedisplayTimeout = Settings.System.getLong(
                     resolver, Settings.System.ACTIVE_DISPLAY_REDISPLAY, 0L);
+            mDisplayActiveTimeout = Settings.System.getLong(
+                    resolver, Settings.System.ACTIVE_DISPLAY_DISPLAYACTIVE, 10000L);
             mInitialBrightness = Settings.System.getInt(
                     resolver, Settings.System.ACTIVE_DISPLAY_BRIGHTNESS, 100) / 100f;
             mSunlightModeEnabled = Settings.System.getInt(
@@ -657,7 +665,7 @@ public class ActiveDisplayView extends FrameLayout {
     }
 
     private void handleShowNotification(boolean ping) {
-        if (!mDisplayNotifications || mNotification == null) return;
+        if (!mDisplayNotifications || inQuietHours() || mNotification == null) return;
         showNotificationView();
         setActiveNotification(mNotification, true);
         inflateRemoteView(mNotification);
@@ -696,7 +704,7 @@ public class ActiveDisplayView extends FrameLayout {
         showNotificationView();
         invalidate();
         turnScreenOn();
-    }
+   }
 
     private void onScreenTurnedOn() {
         cancelRedisplayTimer();
@@ -704,6 +712,7 @@ public class ActiveDisplayView extends FrameLayout {
     }
 
     private void onScreenTurnedOff() {
+        mWakedByPocketMode = false;
         hideNotificationView();
         cancelTimeoutTimer();
         if (mRedisplayTimeout > 0) updateRedisplayTimer();
@@ -711,6 +720,7 @@ public class ActiveDisplayView extends FrameLayout {
     }
 
     private void turnScreenOff() {
+        mWakedByPocketMode = false;
         try {
             mPM.goToSleep(SystemClock.uptimeMillis(), 0);
         } catch (RemoteException e) {
@@ -826,12 +836,12 @@ public class ActiveDisplayView extends FrameLayout {
     }
 
     private void registerSensorListener(Sensor sensor) {
-        if (sensor != null)
+        if (sensor != null && mPocketMode != POCKET_MODE_OFF)
             mSensorManager.registerListener(mSensorListener, sensor, SensorManager.SENSOR_DELAY_UI);
     }
 
     private void unregisterSensorListener(Sensor sensor) {
-        if (sensor != null)
+        if (sensor != null && mPocketMode != POCKET_MODE_OFF)
             mSensorManager.unregisterListener(mSensorListener, sensor);
     }
 
@@ -884,10 +894,20 @@ public class ActiveDisplayView extends FrameLayout {
                                 && mOverflowNotifications.getChildCount() < MAX_OVERFLOW_ICONS) {
                             ImageView iv = new ImageView(mContext);
                             if (mOverflowNotifications.getChildCount() < (MAX_OVERFLOW_ICONS - 1)) {
-                                Context pkgContext = mContext.createPackageContext(
-                                        sbns[i].getPackageName(), Context.CONTEXT_RESTRICTED);
-                                iv.setImageDrawable(pkgContext.getResources()
-                                        .getDrawable(sbns[i].getNotification().icon));
+                                Drawable iconDrawable = null;
+                                try {
+                                    Context pkgContext = mContext.createPackageContext(
+                                            sbns[i].getPackageName(), Context.CONTEXT_RESTRICTED);
+                                    iconDrawable = pkgContext.getResources()
+                                            .getDrawable(sbns[i].getNotification().icon);
+                                } catch (NameNotFoundException nnfe) {
+                                    iconDrawable = mContext.getResources()
+                                            .getDrawable(R.drawable.ic_ad_unknown_icon);
+                                } catch (Resources.NotFoundException nfe) {
+                                    iconDrawable = mContext.getResources()
+                                            .getDrawable(R.drawable.ic_ad_unknown_icon);
+                                }
+                                iv.setImageDrawable(iconDrawable);
                                 iv.setTag(sbns[i]);
                                 if (sbns[i].getPackageName().equals(mNotification.getPackageName())
                                         && sbns[i].getId() == mNotification.getId()) {
@@ -904,7 +924,6 @@ public class ActiveDisplayView extends FrameLayout {
                         }
                     }
                 } catch (RemoteException re) {
-                } catch (NameNotFoundException nnfe) {
                 }
             }
         });
@@ -952,12 +971,39 @@ public class ActiveDisplayView extends FrameLayout {
     };
 
     /**
+     * Check if device is in Quiet Hours in the moment.
+     */
+    private boolean inQuietHours() {
+        boolean quietHoursEnabled = Settings.System.getIntForUser(mContext.getContentResolver(),
+                Settings.System.QUIET_HOURS_ENABLED, 0, UserHandle.USER_CURRENT_OR_SELF) != 0;
+        int quietHoursStart = Settings.System.getIntForUser(mContext.getContentResolver(),
+                Settings.System.QUIET_HOURS_START, 0, UserHandle.USER_CURRENT_OR_SELF);
+        int quietHoursEnd = Settings.System.getIntForUser(mContext.getContentResolver(),
+                Settings.System.QUIET_HOURS_END, 0, UserHandle.USER_CURRENT_OR_SELF);
+        boolean quietHoursDim = Settings.System.getIntForUser(mContext.getContentResolver(),
+                    Settings.System.QUIET_HOURS_DIM, 0, UserHandle.USER_CURRENT_OR_SELF) != 0;
+
+        if (quietHoursEnabled && quietHoursDim && (quietHoursStart != quietHoursEnd)) {
+            Calendar calendar = Calendar.getInstance();
+            int minutes = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE);
+            if (quietHoursEnd < quietHoursStart) {
+                return (minutes > quietHoursStart) || (minutes < quietHoursEnd);
+            } else {
+                return (minutes > quietHoursStart) && (minutes < quietHoursEnd);
+            }
+        }
+        return false;
+    }
+
+    /**
      * Swaps the current StatusBarNotification with {@code sbn}
      * @param sbn The StatusBarNotification to swap with the current
      */
     private void swapNotification(StatusBarNotification sbn) {
-        mNotification = sbn;
-        setActiveNotification(sbn, false);
+        if(sbn!=null) {
+            mNotification = sbn;
+            setActiveNotification(sbn, false);
+        }
     }
 
     /**
@@ -1000,38 +1046,41 @@ public class ActiveDisplayView extends FrameLayout {
     }
 
     /**
+     * Determine if a call is incoming.
+     * @return True if a call is incoming.
+     */
+    private boolean isCallIncoming() {
+        TelephonyManager tm = (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
+        return tm.getCallState() == TelephonyManager.CALL_STATE_RINGING;
+    }
+
+    /**
      * Sets {@code sbn} as the current notification inside the ring.
      * @param sbn StatusBarNotification to be placed as the current one.
      * @param updateOthers Set to true to update the overflow notifications.
      */
     private void setActiveNotification(final StatusBarNotification sbn, final boolean updateOthers) {
-        try {
-            Context pkgContext = mContext.createPackageContext(sbn.getPackageName(), Context.CONTEXT_RESTRICTED);
-            mNotificationDrawable = pkgContext.getResources().getDrawable(sbn.getNotification().icon);
-            mCurrentNotificationIcon.setImageDrawable(mNotificationDrawable);
-            setHandleText(sbn);
-            mNotification = sbn;
-            mGlowPadView.post(new Runnable() {
+        if(sbn!=null) {
+            try {
+                Context pkgContext = mContext.createPackageContext(sbn.getPackageName(), Context.CONTEXT_RESTRICTED);
+                mNotificationDrawable = pkgContext.getResources().getDrawable(sbn.getNotification().icon);
+            } catch (NameNotFoundException nnfe) {
+                mNotificationDrawable = mContext.getResources().getDrawable(R.drawable.ic_ad_unknown_icon);
+            } catch (Resources.NotFoundException nfe) {
+                mNotificationDrawable = mContext.getResources().getDrawable(R.drawable.ic_ad_unknown_icon);
+            }
+            post(new Runnable() {
                 @Override
                 public void run() {
+                    mCurrentNotificationIcon.setImageDrawable(mNotificationDrawable);
+                    setHandleText(sbn);
+                    mNotification = sbn;
                     updateResources();
                     mGlowPadView.invalidate();
                     if (updateOthers) updateOtherNotifications();
                 }
             });
-        } catch (NameNotFoundException e) {
         }
-        post(new Runnable() {
-            @Override
-            public void run() {
-                mCurrentNotificationIcon.setImageDrawable(mNotificationDrawable);
-                setHandleText(sbn);
-                mNotification = sbn;
-                updateResources();
-                mGlowPadView.invalidate();
-                if (updateOthers) updateOtherNotifications();
-            }
-        });
     }
 
     /**
@@ -1096,7 +1145,8 @@ public class ActiveDisplayView extends FrameLayout {
                 if (isFar != mProximityIsFar) {
                     mProximityIsFar = isFar;
                     if (isFar) {
-                        if (!isScreenOn() && mPocketMode != POCKET_MODE_OFF && !isOnCall()) {
+                        if (!isScreenOn() && mPocketMode != POCKET_MODE_OFF && !isOnCall() && !isCallIncoming() && !inQuietHours()) {
+                            mWakedByPocketMode = true;
                             if (mNotification == null) {
                                 mNotification = getNextAvailableNotification();
                             }
@@ -1106,10 +1156,19 @@ public class ActiveDisplayView extends FrameLayout {
                                 showTime();
                             }
                         }
+                    } else {
+                        if (isScreenOn() && mPocketMode != POCKET_MODE_OFF && !isOnCall() && !isCallIncoming() && !inQuietHours() && mWakedByPocketMode) {
+                            mWakedByPocketMode = false;
+
+                            restoreBrightness();
+                            cancelTimeoutTimer();
+                            turnScreenOff();
+                        }
                     }
                 }
             } else if (event.sensor.equals(mLightSensor)) {
                 boolean isBright = mIsInBrightLight;
+                mWakedByPocketMode = false;
                 final float max = mLightSensor.getMaximumRange();
                 // we don't want the display switching back and forth so there is a region
                 // between 50% and 80% max that we will not toggle the bright light condition
@@ -1200,7 +1259,7 @@ public class ActiveDisplayView extends FrameLayout {
         } catch (Exception e) {
         }
         Calendar time = Calendar.getInstance();
-        time.setTimeInMillis(System.currentTimeMillis() + DISPLAY_TIMEOUT);
+        time.setTimeInMillis(System.currentTimeMillis() + mDisplayActiveTimeout);
         am.set(AlarmManager.RTC, time.getTimeInMillis(), pi);
     }
 
