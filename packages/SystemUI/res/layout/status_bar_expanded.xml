@@ -29,11 +29,6 @@
     android:layout_marginStart="@dimen/notification_panel_margin_left"
     >
 
-    <com.android.systemui.statusbar.phone.NotificationWallpaper
-        android:id="@+id/notification_wallpaper"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
-
     <View
         android:id="@+id/handle"
         android:layout_width="match_parent"
@@ -50,17 +45,6 @@
         android:layout_gravity="bottom"
         />
 
-    <com.android.systemui.statusbar.policy.WeatherText
-        android:id="@+id/weather"
-        android:textAppearance="@style/TextAppearance.StatusBar.Expanded.Network"
-        android:layout_height="@dimen/carrier_label_height"
-        android:layout_width="match_parent"
-        android:layout_gravity="bottom"
-        android:layout_marginBottom="@dimen/weather_text_margin"
-        android:gravity="center"
-        android:visibility="invisible"
-        />
-
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -72,42 +56,6 @@
         <include layout="@layout/status_bar_expanded_header"
             android:layout_width="match_parent"
             android:layout_height="@dimen/notification_panel_header_height"
-            />
-
-        <LinearLayout
-            xmlns:android="http://schemas.android.com/apk/res/android"
-            xmlns:systemui="http://schemas.android.com/apk/res/com.android.systemui"
-            android:id="@+id/quick_toggles"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
-            />
-
-        <include layout="@layout/weatherpanel"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            />
-
-        <LinearLayout
-            android:id="@+id/ribbon_qs"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingLeft="@*android:dimen/notification_ribbon_padding"
-            android:paddingRight="@*android:dimen/notification_ribbon_padding"
-            android:orientation="horizontal"
-            android:visibility="gone"
-            android:gravity="center_horizontal"
-            />
-
-        <LinearLayout
-            android:id="@+id/ribbon_notif"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingLeft="@*android:dimen/notification_ribbon_padding"
-            android:paddingRight="@*android:dimen/notification_ribbon_padding"
-            android:orientation="horizontal"
-            android:gravity="center_horizontal"
             />
 
         <TextView

@@ -24,6 +24,7 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.database.ContentObserver;
 import android.hardware.input.InputManager;
+import android.os.BatteryStats;
 import android.os.Handler;
 import android.os.IVibratorService;
 import android.os.PowerManager;
@@ -45,7 +46,6 @@ import com.android.internal.app.IAppOpsService;
 import com.android.internal.app.IBatteryStats;
 
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.LinkedList;
 import java.util.ListIterator;
 
@@ -144,7 +144,8 @@ public class VibratorService extends IVibratorService.Stub
         mWakeLock.setReferenceCounted(true);
 
         mAppOpsService = IAppOpsService.Stub.asInterface(ServiceManager.getService(Context.APP_OPS_SERVICE));
-        mBatteryStatsService = IBatteryStats.Stub.asInterface(ServiceManager.getService("batteryinfo"));
+        mBatteryStatsService = IBatteryStats.Stub.asInterface(ServiceManager.getService(
+                BatteryStats.SERVICE_NAME));
 
         mVibrations = new LinkedList<Vibration>();
 
@@ -200,13 +201,11 @@ public class VibratorService extends IVibratorService.Stub
         // timeout of 0 or negative. This will ensure that a vibration has
         // either a timeout of > 0 or a non-null pattern.
         if (milliseconds <= 0 || (mCurrentVibration != null
-                && mCurrentVibration.hasLongerTimeout(milliseconds)) || inQuietHours()) {
+                && mCurrentVibration.hasLongerTimeout(milliseconds))) {
             // Ignore this vibration since the current vibration will play for
             // longer than milliseconds.
             return;
         }
-
-        milliseconds = userDuration(milliseconds);
 
         Vibration vib = new Vibration(token, milliseconds, uid, packageName);
 
@@ -233,24 +232,11 @@ public class VibratorService extends IVibratorService.Stub
         return true;
     }
 
-    private long userDuration(long millis) {
-        int userMillis = Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.GENERIC_VIBRATE_INTENSITY, 0);
-        // Set length if <userMillis and all small vibrations
-        if (userMillis != 0 && (millis <= userMillis || millis <= 35)) {
-            millis = userMillis;
-        }
-        return millis;
-    }
-
     public void vibratePattern(int uid, String packageName, long[] pattern, int repeat,
             IBinder token) {
         if (mContext.checkCallingOrSelfPermission(android.Manifest.permission.VIBRATE)
                 != PackageManager.PERMISSION_GRANTED) {
             throw new SecurityException("Requires VIBRATE permission");
-        }
-        if (inQuietHours()) {
-            return;
         }
         verifyIncomingUid(uid);
         // so wakelock calls will succeed
@@ -356,7 +342,8 @@ public class VibratorService extends IVibratorService.Stub
     // Lock held on mVibrations
     private void startVibrationLocked(final Vibration vib) {
         try {
-            int mode = mAppOpsService.startOperation(AppOpsManager.OP_VIBRATE, vib.mUid, vib.mPackageName);
+            int mode = mAppOpsService.startOperation(AppOpsManager.getToken(mAppOpsService),
+                    AppOpsManager.OP_VIBRATE, vib.mUid, vib.mPackageName);
             if (mode != AppOpsManager.MODE_ALLOWED) {
                 if (mode == AppOpsManager.MODE_ERRORED) {
                     Slog.w(TAG, "Would be an error: vibrate from uid " + vib.mUid);
@@ -380,7 +367,8 @@ public class VibratorService extends IVibratorService.Stub
     private void reportFinishVibrationLocked() {
         if (mCurrentVibration != null) {
             try {
-                mAppOpsService.finishOperation(AppOpsManager.OP_VIBRATE, mCurrentVibration.mUid,
+                mAppOpsService.finishOperation(AppOpsManager.getToken(mAppOpsService),
+                        AppOpsManager.OP_VIBRATE, mCurrentVibration.mUid,
                         mCurrentVibration.mPackageName);
             } catch (RemoteException e) {
             }
@@ -486,8 +474,6 @@ public class VibratorService extends IVibratorService.Stub
     }
 
     private void doVibratorOn(long millis, int uid) {
-        millis = userDuration(millis);
-
         synchronized (mInputDeviceVibrators) {
             try {
                 mBatteryStatsService.noteVibratorOn(uid, millis);
@@ -624,30 +610,4 @@ public class VibratorService extends IVibratorService.Stub
             }
         }
     };
-
-    private boolean inQuietHours() {
-        boolean quietHoursEnabled = Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.QUIET_HOURS_ENABLED, 0) != 0;
-        int quietHoursStart = Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.QUIET_HOURS_START, 0);
-        int quietHoursEnd = Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.QUIET_HOURS_END, 0);
-        boolean quietHoursVibrate = Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.QUIET_HOURS_STILL, 0) != 0;
-        if (quietHoursEnabled && quietHoursVibrate) {
-            if (quietHoursStart == quietHoursEnd) {
-                return true;
-            }
-            // Get the date in "quiet hours" format.
-            Calendar calendar = Calendar.getInstance();
-            int minutes = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE);
-            if (quietHoursEnd < quietHoursStart) {
-                // Starts at night, ends in the morning.
-                return (minutes > quietHoursStart) || (minutes < quietHoursEnd);
-            } else {
-                return (minutes > quietHoursStart) && (minutes < quietHoursEnd);
-            }
-        }
-        return false;
-    }
 }

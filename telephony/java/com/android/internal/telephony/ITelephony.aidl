@@ -45,20 +45,6 @@ interface ITelephony {
     void call(String callingPackage, String number);
 
     /**
-     * Toggle between 3G and LTE (NT_MODE_CDMA, NT_MODE_GLOBAL)
-     * @param boolean to turn on and off LTE
-     * @hide
-     */
-     void toggleLTE(boolean on);
-
-     /**
-      * Toggle between 2G and 3G (NT_MODE_GSM, NT_MODE_WCDMA_PREF)
-      * @param boolean to turn on and off 2G
-      * @hide
-      */
-      void toggle2G(boolean on);
-
-    /**
      * If there is currently a call in progress, show the call screen.
      * The DTMF dialpad may or may not be visible initially, depending on
      * whether it was up when the user last exited the InCallScreen.
@@ -158,29 +144,6 @@ interface ITelephony {
      * @return whether the operation was a success.
      */
     boolean supplyPin(String pin);
-
-    /**
-     * Supply a pin to unlock the SIM.  Blocks until a result is determined.
-     * Returns a specific success/error code.
-     * @param pin The pin to check.
-     * @return Phone.PIN_RESULT_SUCCESS on success. Otherwise error code
-     */
-    int supplyPinReportResult(String pin);
-
-    /**
-     * Supply puk to unlock the SIM and set SIM pin to new pin.
-     * Blocks until a result is determined.
-     * Returns a specific success/error code.
-     * @param puk The puk to check
-     *        pin The pin to check.
-     * @return Phone.PIN_RESULT_SUCCESS on success. Otherwise error code
-     */
-    int supplyPukReportResult(String puk, String pin);
-
-    /**
-     * Gets the number of attempts remaining for PIN1/PUK1 unlock.
-     */
-    int getIccPin1RetryCount();
 
     /**
      * Supply puk to unlock the SIM and set SIM pin to new pin.

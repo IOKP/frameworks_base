@@ -21,72 +21,29 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.BatteryManager;
-import android.widget.ImageView;
-import android.widget.TextView;
-
-import com.android.systemui.R;
 
 import java.util.ArrayList;
 
 public class BatteryController extends BroadcastReceiver {
     private static final String TAG = "StatusBar.BatteryController";
 
-    private Context mContext;
-    private ArrayList<ImageView> mIconViews = new ArrayList<ImageView>();
-    private ArrayList<TextView> mLabelViews = new ArrayList<TextView>();
 
     private ArrayList<BatteryStateChangeCallback> mChangeCallbacks =
             new ArrayList<BatteryStateChangeCallback>();
-
-    private int mLevel;
-    private boolean mPlugged;
-
-    // For HALO Mods
-    private ArrayList<BatteryStateChangeCallbackHalo> mChangeCallbacksHalo =
-            new ArrayList<BatteryStateChangeCallbackHalo>();
 
     public interface BatteryStateChangeCallback {
         public void onBatteryLevelChanged(int level, boolean pluggedIn);
     }
 
-    //For HALO Mods
-    public interface BatteryStateChangeCallbackHalo {
-        public void onBatteryLevelChangedHalo(int level, boolean pluggedIn);
-    }
-
-    private static int sBatteryLevel = 50;
-    private static boolean sBatteryCharging = false;
-
     public BatteryController(Context context) {
-        mContext = context;
-
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_BATTERY_CHANGED);
         context.registerReceiver(this, filter);
     }
 
-    public void addIconView(ImageView v) {
-        mIconViews.add(v);
-    }
-
-    public void addLabelView(TextView v) {
-        mLabelViews.add(v);
-    }
-
     public void addStateChangedCallback(BatteryStateChangeCallback cb) {
         mChangeCallbacks.add(cb);
     }
-
-    // For Halo Mods
-    public void addStateChangedCallbackHalo(BatteryStateChangeCallbackHalo cb_Halo) {
-        mChangeCallbacksHalo.add(cb_Halo);
-    }
-
-    // For Halo Mods
-    public void removeStateChangedCallbackHalo(BatteryStateChangeCallbackHalo cb_Halo) {
-        mChangeCallbacksHalo.remove(cb_Halo);
-    }
-
 
     public void onReceive(Context context, Intent intent) {
         final String action = intent.getAction();
@@ -103,41 +60,9 @@ public class BatteryController extends BroadcastReceiver {
                     break;
             }
 
-            final int icon = plugged ? R.drawable.stat_sys_battery_charge
-                    : R.drawable.stat_sys_battery;
-
-            int N = mIconViews.size();
-            for (int i = 0; i < N; i++) {
-                ImageView v = mIconViews.get(i);
-                v.setImageResource(icon);
-                v.setImageLevel(level);
-                v.setContentDescription(mContext.getString(R.string.accessibility_battery_level,
-                        level));
+            for (BatteryStateChangeCallback cb : mChangeCallbacks) {
+                cb.onBatteryLevelChanged(level, plugged);
             }
-            N = mLabelViews.size();
-            for (int i = 0; i < N; i++) {
-                TextView v = mLabelViews.get(i);
-                v.setText(mContext.getString(R.string.status_bar_settings_battery_meter_format,
-                        level));
-            }
-            sBatteryLevel = level;
-            sBatteryCharging = plugged;
-            updateCallbacks();
-        }
-
-        // For HALO Mods
-        for (BatteryStateChangeCallbackHalo cb_Halo : mChangeCallbacksHalo) {
-            cb_Halo.onBatteryLevelChangedHalo(mLevel, mPlugged);
-        }
-    }
-
-    public void updateCallback(BatteryStateChangeCallback cb) {
-        cb.onBatteryLevelChanged(sBatteryLevel, sBatteryCharging);
-    }
-
-    public void updateCallbacks() {
-        for (BatteryStateChangeCallback cb : mChangeCallbacks) {
-            cb.onBatteryLevelChanged(sBatteryLevel, sBatteryCharging);
         }
     }
 }

@@ -26,29 +26,18 @@ import android.os.UserHandle;
  * the status bar and any {@link android.service.notification.NotificationListenerService}s.
  */
 public class StatusBarNotification implements Parcelable {
-    public final String pkg;
-    public final int id;
-    public final String tag;
+    private final String pkg;
+    private final int id;
+    private final String tag;
 
-    public final int uid;
-    public final String basePkg;
-    public final int initialPid;
-    // TODO: make this field private and move callers to an accessor that
-    // ensures sourceUser is applied.
+    private final int uid;
+    private final String basePkg;
+    private final int initialPid;
+    private final Notification notification;
+    private final UserHandle user;
+    private final long postTime;
 
-    public final Notification notification;
-    public final UserHandle user;
-    public final long postTime;
-
-    public final int score;
-
-    /** This is temporarily needed for the JB MR1 PDK.
-     * @hide */
-    @Deprecated
-    public StatusBarNotification(String pkg, int id, String tag, int uid, int initialPid, int score,
-            Notification notification) {
-        this(pkg, id, tag, uid, initialPid, score, notification, UserHandle.OWNER);
-    }
+    private final int score;
 
     /** @hide */
     public StatusBarNotification(String pkg, int id, String tag, int uid, int initialPid, int score,

@@ -31,7 +31,6 @@ import java.util.Map;
 
 import android.app.AppOpsManager;
 import android.content.Context;
-import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.os.AsyncTask;
@@ -42,6 +41,7 @@ import android.os.Process;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.UserHandle;
+import android.util.ArrayMap;
 import android.util.AtomicFile;
 import android.util.Log;
 import android.util.Pair;
@@ -100,6 +100,8 @@ public class AppOpsService extends IAppOpsService.Stub {
     }
 
     public final static class Op {
+        public final int uid;
+        public final String packageName;
         public final int op;
         public int mode;
         public int duration;
@@ -107,18 +109,20 @@ public class AppOpsService extends IAppOpsService.Stub {
         public long rejectTime;
         public int nesting;
 
-        public Op(int _op) {
+        public Op(int _uid, String _packageName, int _op) {
+            uid = _uid;
+            packageName = _packageName;
             op = _op;
-            mode = AppOpsManager.MODE_ALLOWED;
+            mode = AppOpsManager.opToDefaultMode(op);
         }
     }
 
     final SparseArray<ArrayList<Callback>> mOpModeWatchers
             = new SparseArray<ArrayList<Callback>>();
-    final HashMap<String, ArrayList<Callback>> mPackageModeWatchers
-            = new HashMap<String, ArrayList<Callback>>();
-    final HashMap<IBinder, Callback> mModeWatchers
-            = new HashMap<IBinder, Callback>();
+    final ArrayMap<String, ArrayList<Callback>> mPackageModeWatchers
+            = new ArrayMap<String, ArrayList<Callback>>();
+    final ArrayMap<IBinder, Callback> mModeWatchers
+            = new ArrayMap<IBinder, Callback>();
 
     public final class Callback implements DeathRecipient {
         final IAppOpsCallback mCallback;
@@ -141,12 +145,53 @@ public class AppOpsService extends IAppOpsService.Stub {
         }
     }
 
+    final ArrayMap<IBinder, ClientState> mClients = new ArrayMap<IBinder, ClientState>();
+
+    public final class ClientState extends Binder implements DeathRecipient {
+        final IBinder mAppToken;
+        final int mPid;
+        final ArrayList<Op> mStartedOps;
+
+        public ClientState(IBinder appToken) {
+            mAppToken = appToken;
+            mPid = Binder.getCallingPid();
+            if (appToken instanceof Binder) {
+                // For local clients, there is no reason to track them.
+                mStartedOps = null;
+            } else {
+                mStartedOps = new ArrayList<Op>();
+                try {
+                    mAppToken.linkToDeath(this, 0);
+                } catch (RemoteException e) {
+                }
+            }
+        }
+
+        @Override
+        public String toString() {
+            return "ClientState{" +
+                    "mAppToken=" + mAppToken +
+                    ", " + (mStartedOps != null ? ("pid=" + mPid) : "local") +
+                    '}';
+        }
+
+        @Override
+        public void binderDied() {
+            synchronized (AppOpsService.this) {
+                for (int i=mStartedOps.size()-1; i>=0; i--) {
+                    finishOperationLocked(mStartedOps.get(i));
+                }
+                mClients.remove(mAppToken);
+            }
+        }
+    }
+
     public AppOpsService(File storagePath) {
         mFile = new AtomicFile(storagePath);
         mHandler = new Handler();
         readState();
     }
-    
+
     public void publish(Context context) {
         mContext = context;
         ServiceManager.addService(Context.APP_OPS_SERVICE, asBinder());
@@ -334,7 +379,7 @@ public class AppOpsService extends IAppOpsService.Stub {
                         }
                         repCbs.addAll(cbs);
                     }
-                    if (mode == AppOpsManager.MODE_ALLOWED) {
+                    if (mode == AppOpsManager.opToDefaultMode(op.op)) {
                         // If going into the default mode, prune this op
                         // if there is nothing else interesting in it.
                         pruneOp(op, uid, packageName);
@@ -381,23 +426,34 @@ public class AppOpsService extends IAppOpsService.Stub {
         HashMap<Callback, ArrayList<Pair<String, Integer>>> callbacks = null;
         synchronized (this) {
             boolean changed = false;
-            for (int i=0; i<mUidOps.size(); i++) {
+            for (int i=mUidOps.size()-1; i>=0; i--) {
                 HashMap<String, Ops> packages = mUidOps.valueAt(i);
-                for (Map.Entry<String, Ops> ent : packages.entrySet()) {
+                Iterator<Map.Entry<String, Ops>> it = packages.entrySet().iterator();
+                while (it.hasNext()) {
+                    Map.Entry<String, Ops> ent = it.next();
                     String packageName = ent.getKey();
                     Ops pkgOps = ent.getValue();
-                    for (int j=0; j<pkgOps.size(); j++) {
+                    for (int j=pkgOps.size()-1; j>=0; j--) {
                         Op curOp = pkgOps.valueAt(j);
-                        if (curOp.mode != AppOpsManager.MODE_ALLOWED) {
-                            curOp.mode = AppOpsManager.MODE_ALLOWED;
+                        if (AppOpsManager.opAllowsReset(curOp.op)
+                                && curOp.mode != AppOpsManager.opToDefaultMode(curOp.op)) {
+                            curOp.mode = AppOpsManager.opToDefaultMode(curOp.op);
                             changed = true;
                             callbacks = addCallbacks(callbacks, packageName, curOp.op,
                                     mOpModeWatchers.get(curOp.op));
                             callbacks = addCallbacks(callbacks, packageName, curOp.op,
                                     mPackageModeWatchers.get(packageName));
-                            pruneOp(curOp, mUidOps.keyAt(i), packageName);
+                            if (curOp.time == 0 && curOp.rejectTime == 0) {
+                                pkgOps.removeAt(j);
+                            }
                         }
                     }
+                    if (pkgOps.size() == 0) {
+                        it.remove();
+                    }
+                }
+                if (packages.size() == 0) {
+                    mUidOps.removeAt(i);
                 }
             }
             if (changed) {
@@ -453,24 +509,33 @@ public class AppOpsService extends IAppOpsService.Stub {
             Callback cb = mModeWatchers.remove(callback.asBinder());
             if (cb != null) {
                 cb.unlinkToDeath();
-                for (int i=0; i<mOpModeWatchers.size(); i++) {
+                for (int i=mOpModeWatchers.size()-1; i>=0; i--) {
                     ArrayList<Callback> cbs = mOpModeWatchers.valueAt(i);
                     cbs.remove(cb);
                     if (cbs.size() <= 0) {
                         mOpModeWatchers.removeAt(i);
                     }
                 }
-                if (mPackageModeWatchers.size() > 0) {
-                    Iterator<ArrayList<Callback>> it = mPackageModeWatchers.values().iterator();
-                    while (it.hasNext()) {
-                        ArrayList<Callback> cbs = it.next();
-                        cbs.remove(cb);
-                        if (cbs.size() <= 0) {
-                            it.remove();
-                        }
+                for (int i=mPackageModeWatchers.size()-1; i>=0; i--) {
+                    ArrayList<Callback> cbs = mPackageModeWatchers.valueAt(i);
+                    cbs.remove(cb);
+                    if (cbs.size() <= 0) {
+                        mPackageModeWatchers.removeAt(i);
                     }
                 }
             }
+        }
+    }
+
+    @Override
+    public IBinder getToken(IBinder clientToken) {
+        synchronized (this) {
+            ClientState cs = mClients.get(clientToken);
+            if (cs == null) {
+                cs = new ClientState(clientToken);
+                mClients.put(clientToken, cs);
+            }
+            return cs;
         }
     }
 
@@ -481,9 +546,20 @@ public class AppOpsService extends IAppOpsService.Stub {
         synchronized (this) {
             Op op = getOpLocked(AppOpsManager.opToSwitch(code), uid, packageName, false);
             if (op == null) {
-                return AppOpsManager.MODE_ALLOWED;
+                return AppOpsManager.opToDefaultMode(code);
             }
             return op.mode;
+        }
+    }
+
+    @Override
+    public int checkPackage(int uid, String packageName) {
+        synchronized (this) {
+            if (getOpsLocked(uid, packageName, true) != null) {
+                return AppOpsManager.MODE_ALLOWED;
+            } else {
+                return AppOpsManager.MODE_ERRORED;
+            }
         }
     }
 
@@ -496,7 +572,7 @@ public class AppOpsService extends IAppOpsService.Stub {
             if (ops == null) {
                 if (DEBUG) Log.d(TAG, "noteOperation: no op for code " + code + " uid " + uid
                         + " package " + packageName);
-                return AppOpsManager.MODE_IGNORED;
+                return AppOpsManager.MODE_ERRORED;
             }
             Op op = getOpLocked(ops, code, true);
             if (op.duration == -1) {
@@ -521,15 +597,16 @@ public class AppOpsService extends IAppOpsService.Stub {
     }
 
     @Override
-    public int startOperation(int code, int uid, String packageName) {
+    public int startOperation(IBinder token, int code, int uid, String packageName) {
         verifyIncomingUid(uid);
         verifyIncomingOp(code);
+        ClientState client = (ClientState)token;
         synchronized (this) {
             Ops ops = getOpsLocked(uid, packageName, true);
             if (ops == null) {
                 if (DEBUG) Log.d(TAG, "startOperation: no op for code " + code + " uid " + uid
                         + " package " + packageName);
-                return AppOpsManager.MODE_IGNORED;
+                return AppOpsManager.MODE_ERRORED;
             }
             Op op = getOpLocked(ops, code, true);
             final int switchCode = AppOpsManager.opToSwitch(code);
@@ -548,32 +625,46 @@ public class AppOpsService extends IAppOpsService.Stub {
                 op.duration = -1;
             }
             op.nesting++;
+            if (client.mStartedOps != null) {
+                client.mStartedOps.add(op);
+            }
             return AppOpsManager.MODE_ALLOWED;
         }
     }
 
     @Override
-    public void finishOperation(int code, int uid, String packageName) {
+    public void finishOperation(IBinder token, int code, int uid, String packageName) {
         verifyIncomingUid(uid);
         verifyIncomingOp(code);
+        ClientState client = (ClientState)token;
         synchronized (this) {
             Op op = getOpLocked(code, uid, packageName, true);
             if (op == null) {
                 return;
             }
-            if (op.nesting <= 1) {
-                if (op.nesting == 1) {
-                    op.duration = (int)(System.currentTimeMillis() - op.time);
-                    op.time += op.duration;
-                } else {
-                    Slog.w(TAG, "Finishing op nesting under-run: uid " + uid + " pkg " + packageName
-                        + " code " + code + " time=" + op.time + " duration=" + op.duration
-                        + " nesting=" + op.nesting);
+            if (client.mStartedOps != null) {
+                if (!client.mStartedOps.remove(op)) {
+                    throw new IllegalStateException("Operation not started: uid" + op.uid
+                            + " pkg=" + op.packageName + " op=" + op.op);
                 }
-                op.nesting = 0;
-            } else {
-                op.nesting--;
             }
+            finishOperationLocked(op);
+        }
+    }
+
+    void finishOperationLocked(Op op) {
+        if (op.nesting <= 1) {
+            if (op.nesting == 1) {
+                op.duration = (int)(System.currentTimeMillis() - op.time);
+                op.time += op.duration;
+            } else {
+                Slog.w(TAG, "Finishing op nesting under-run: uid " + op.uid + " pkg "
+                        + op.packageName + " code " + op.op + " time=" + op.time
+                        + " duration=" + op.duration + " nesting=" + op.nesting);
+            }
+            op.nesting = 0;
+        } else {
+            op.nesting--;
         }
     }
 
@@ -624,6 +715,9 @@ public class AppOpsService extends IAppOpsService.Stub {
                         pkgUid = mContext.getPackageManager().getPackageUid(packageName,
                                 UserHandle.getUserId(uid));
                     } catch (NameNotFoundException e) {
+                        if ("media".equals(packageName)) {
+                            pkgUid = Process.MEDIA_UID;
+                        }
                     }
                     if (pkgUid != uid) {
                         // Oops!  The package name is not valid for the uid they are calling
@@ -671,7 +765,7 @@ public class AppOpsService extends IAppOpsService.Stub {
             if (!edit) {
                 return null;
             }
-            op = new Op(code);
+            op = new Op(ops.uid, ops.packageName, code);
             ops.put(code, op);
         }
         if (edit) {
@@ -781,7 +875,7 @@ public class AppOpsService extends IAppOpsService.Stub {
 
             String tagName = parser.getName();
             if (tagName.equals("op")) {
-                Op op = new Op(Integer.parseInt(parser.getAttributeValue(null, "n")));
+                Op op = new Op(uid, pkgName, Integer.parseInt(parser.getAttributeValue(null, "n")));
                 String mode = parser.getAttributeValue(null, "m");
                 if (mode != null) {
                     op.mode = Integer.parseInt(mode);
@@ -854,7 +948,7 @@ public class AppOpsService extends IAppOpsService.Stub {
                             AppOpsManager.OpEntry op = ops.get(j);
                             out.startTag(null, "op");
                             out.attribute(null, "n", Integer.toString(op.getOp()));
-                            if (op.getMode() != AppOpsManager.MODE_ALLOWED) {
+                            if (op.getMode() != AppOpsManager.opToDefaultMode(op.getOp())) {
                                 out.attribute(null, "m", Integer.toString(op.getMode()));
                             }
                             long time = op.getTime();
@@ -901,6 +995,62 @@ public class AppOpsService extends IAppOpsService.Stub {
         synchronized (this) {
             pw.println("Current AppOps Service state:");
             final long now = System.currentTimeMillis();
+            boolean needSep = false;
+            if (mOpModeWatchers.size() > 0) {
+                needSep = true;
+                pw.println("  Op mode watchers:");
+                for (int i=0; i<mOpModeWatchers.size(); i++) {
+                    pw.print("    Op "); pw.print(AppOpsManager.opToName(mOpModeWatchers.keyAt(i)));
+                    pw.println(":");
+                    ArrayList<Callback> callbacks = mOpModeWatchers.valueAt(i);
+                    for (int j=0; j<callbacks.size(); j++) {
+                        pw.print("      #"); pw.print(j); pw.print(": ");
+                        pw.println(callbacks.get(j));
+                    }
+                }
+            }
+            if (mPackageModeWatchers.size() > 0) {
+                needSep = true;
+                pw.println("  Package mode watchers:");
+                for (int i=0; i<mPackageModeWatchers.size(); i++) {
+                    pw.print("    Pkg "); pw.print(mPackageModeWatchers.keyAt(i));
+                    pw.println(":");
+                    ArrayList<Callback> callbacks = mPackageModeWatchers.valueAt(i);
+                    for (int j=0; j<callbacks.size(); j++) {
+                        pw.print("      #"); pw.print(j); pw.print(": ");
+                        pw.println(callbacks.get(j));
+                    }
+                }
+            }
+            if (mModeWatchers.size() > 0) {
+                needSep = true;
+                pw.println("  All mode watchers:");
+                for (int i=0; i<mModeWatchers.size(); i++) {
+                    pw.print("    "); pw.print(mModeWatchers.keyAt(i));
+                    pw.print(" -> "); pw.println(mModeWatchers.valueAt(i));
+                }
+            }
+            if (mClients.size() > 0) {
+                needSep = true;
+                pw.println("  Clients:");
+                for (int i=0; i<mClients.size(); i++) {
+                    pw.print("    "); pw.print(mClients.keyAt(i)); pw.println(":");
+                    ClientState cs = mClients.valueAt(i);
+                    pw.print("      "); pw.println(cs);
+                    if (cs.mStartedOps != null && cs.mStartedOps.size() > 0) {
+                        pw.println("      Started ops:");
+                        for (int j=0; j<cs.mStartedOps.size(); j++) {
+                            Op op = cs.mStartedOps.get(j);
+                            pw.print("        "); pw.print("uid="); pw.print(op.uid);
+                            pw.print(" pkg="); pw.print(op.packageName);
+                            pw.print(" op="); pw.println(AppOpsManager.opToName(op.op));
+                        }
+                    }
+                }
+            }
+            if (needSep) {
+                pw.println();
+            }
             for (int i=0; i<mUidOps.size(); i++) {
                 pw.print("  Uid "); UserHandle.formatUid(pw, mUidOps.keyAt(i)); pw.println(":");
                 HashMap<String, Ops> pkgOps = mUidOps.valueAt(i);
@@ -928,137 +1078,6 @@ public class AppOpsService extends IAppOpsService.Stub {
                     }
                 }
             }
-        }
-    }
-
-    @Override
-    public List<Integer> getPrivacyGuardOpsForPackage(String packageName) {
-        PackageInfo pkgInfo;
-        List<Integer> ops = new ArrayList<Integer>();
-        try {
-            pkgInfo = mContext.getPackageManager()
-                .getPackageInfo(packageName, PackageManager.GET_PERMISSIONS);
-        } catch (NameNotFoundException e) {
-            return ops;
-        }
-        // we need to get all relevant permissions of the package.
-        // Only calling getOpsForPackage does not return ops
-        // with AppOpsManager.MODE_ALLOWED which never got
-        // granted and do not show up in Ops statistics
-        final String[] requestedPermissions = pkgInfo.requestedPermissions;
-        if (requestedPermissions != null) {
-            for (String requested : requestedPermissions) {
-                int curOp = AppOpsManager.getPrivacyGuardOp(requested);
-                boolean duplicate = false;
-                // check for duplicates
-                for (int op : ops) {
-                    if (op == curOp) {
-                        duplicate = true;
-                    }
-                }
-                if (curOp != AppOpsManager.OP_NONE && !duplicate) {
-                    ops.add(curOp);
-                }
-            }
-        }
-        return ops;
-    }
-
-    @Override
-    public int getPrivacyGuardSettingForPackage(int uid, String packageName) {
-        int privacyGuardState;
-        boolean pgDetect;
-        boolean isCustomOpPresent = false;
-
-        List<AppOpsManager.PackageOps> packageOps =
-            getOpsForPackage(uid, packageName, null);
-        List<Integer> privacyGuardOps = getPrivacyGuardOpsForPackage(packageName);
-        List<Integer> privacyGuardOpsHelper = new ArrayList<Integer>(privacyGuardOps);
-
-        // get disabled Ops and check for custom Op changes
-        if (packageOps != null) {
-            for (AppOpsManager.OpEntry op : packageOps.get(0).getOps()) {
-                pgDetect = false;
-                if (checkOperation(op.getOp(), uid, packageName)
-                    == AppOpsManager.MODE_IGNORED) {
-                    for (int pgOp : privacyGuardOps) {
-                        if (AppOpsManager.opToSwitch(op.getOp()) == pgOp) {
-                            privacyGuardOpsHelper.remove((Integer) pgOp);
-                            pgDetect = true;
-                            break;
-                        }
-                    }
-                    if (!pgDetect) {
-                        isCustomOpPresent = true;
-                    }
-                }
-            }
-        }
-
-        // get privacy guard state
-        if (!privacyGuardOps.isEmpty()
-            && privacyGuardOps.size() != privacyGuardOpsHelper.size()) {
-            if (privacyGuardOpsHelper.isEmpty()) {
-                privacyGuardState = AppOpsManager.PRIVACY_GUARD_ENABLED;
-            } else {
-                privacyGuardState = AppOpsManager.PRIVACY_GUARD_CUSTOM;
-            }
-        } else {
-            privacyGuardState = AppOpsManager.PRIVACY_GUARD_DISABLED;
-        }
-
-        // return current mode
-        switch (privacyGuardState) {
-            case AppOpsManager.PRIVACY_GUARD_ENABLED:
-                if (isCustomOpPresent) {
-                    return AppOpsManager.PRIVACY_GUARD_ENABLED_PLUS;
-                } else {
-                    return AppOpsManager.PRIVACY_GUARD_ENABLED;
-                }
-            case AppOpsManager.PRIVACY_GUARD_CUSTOM:
-                if (isCustomOpPresent) {
-                    return AppOpsManager.PRIVACY_GUARD_CUSTOM_PLUS;
-                } else {
-                    return AppOpsManager.PRIVACY_GUARD_CUSTOM;
-                }
-            case AppOpsManager.PRIVACY_GUARD_DISABLED:
-                if (isCustomOpPresent) {
-                    return AppOpsManager.PRIVACY_GUARD_DISABLED_PLUS;
-                } else {
-                    return AppOpsManager.PRIVACY_GUARD_DISABLED;
-                }
-        }
-        return AppOpsManager.PRIVACY_GUARD_DISABLED;
-    }
-
-    @Override
-    public void setPrivacyGuardSettingForPackage(int uid, String packageName,
-            boolean state, boolean forceAll) {
-        List<Integer> switchOps;
-        if (!forceAll) {
-            // retrieve specific privacy guard permissions
-            switchOps = getPrivacyGuardOpsForPackage(packageName);
-        } else {
-            // if user want to enable all permissions on the package
-            // we need to retrieve the disabled ops.
-            // All ops are retrieved via getOpsForPackage
-            // which are flagged with AppOpsManager.MODE_IGNORED
-            switchOps = new ArrayList<Integer>();
-            List<AppOpsManager.PackageOps> packageOps =
-                getOpsForPackage(uid, packageName, null);
-            if (packageOps != null) {
-                for (AppOpsManager.OpEntry op : packageOps.get(0).getOps()) {
-                    if (checkOperation(op.getOp(), uid, packageName)
-                        == AppOpsManager.MODE_IGNORED) {
-                        switchOps.add(AppOpsManager.opToSwitch(op.getOp()));
-                    }
-                }
-            }
-        }
-
-        for (int op : switchOps) {
-            setMode(op, uid, packageName, state
-                    ? AppOpsManager.MODE_IGNORED : AppOpsManager.MODE_ALLOWED);
         }
     }
 }

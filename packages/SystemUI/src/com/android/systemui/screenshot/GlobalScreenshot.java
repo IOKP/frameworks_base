@@ -45,7 +45,6 @@ import android.os.Environment;
 import android.os.Process;
 import android.provider.MediaStore;
 import android.util.DisplayMetrics;
-import android.util.Log;
 import android.view.Display;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -58,10 +57,8 @@ import android.view.animation.Interpolator;
 import android.widget.ImageView;
 
 import com.android.systemui.R;
-import com.android.systemui.screenshot.TrashScreenshot;
 
 import java.io.File;
-import java.io.IOException;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -187,17 +184,21 @@ class SaveImageInBackgroundTask extends AsyncTask<SaveImageInBackgroundData, Voi
             return null;
         }
 
-        // By default, AsyncTask sets the worker thread to have background thread priority, so
-        // give highest possible priority to worker thread
-        Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_DISPLAY);
+        // By default, AsyncTask sets the worker thread to have background thread priority, so bump
+        // it back up so that we save a little quicker.
+        Process.setThreadPriority(Process.THREAD_PRIORITY_FOREGROUND);
 
         Context context = params[0].context;
         Bitmap image = params[0].image;
         Resources r = context.getResources();
-        OutputStream outStream = null;
+
         try {
             // Create screenshot directory if it doesn't exist
             mScreenshotDir.mkdirs();
+
+            // media provider uses seconds for DATE_MODIFIED and DATE_ADDED, but milliseconds
+            // for DATE_TAKEN
+            long dateSeconds = mImageTime / 1000;
 
             // Save the screenshot to the MediaStore
             ContentValues values = new ContentValues();
@@ -206,8 +207,8 @@ class SaveImageInBackgroundTask extends AsyncTask<SaveImageInBackgroundData, Voi
             values.put(MediaStore.Images.ImageColumns.TITLE, mImageFileName);
             values.put(MediaStore.Images.ImageColumns.DISPLAY_NAME, mImageFileName);
             values.put(MediaStore.Images.ImageColumns.DATE_TAKEN, mImageTime);
-            values.put(MediaStore.Images.ImageColumns.DATE_ADDED, mImageTime);
-            values.put(MediaStore.Images.ImageColumns.DATE_MODIFIED, mImageTime);
+            values.put(MediaStore.Images.ImageColumns.DATE_ADDED, dateSeconds);
+            values.put(MediaStore.Images.ImageColumns.DATE_MODIFIED, dateSeconds);
             values.put(MediaStore.Images.ImageColumns.MIME_TYPE, "image/png");
             values.put(MediaStore.Images.ImageColumns.WIDTH, mImageWidth);
             values.put(MediaStore.Images.ImageColumns.HEIGHT, mImageHeight);
@@ -222,25 +223,18 @@ class SaveImageInBackgroundTask extends AsyncTask<SaveImageInBackgroundData, Voi
             sharingIntent.putExtra(Intent.EXTRA_SUBJECT, subject);
 
             Intent chooserIntent = Intent.createChooser(sharingIntent, null);
-            chooserIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK 
+            chooserIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK
                     | Intent.FLAG_ACTIVITY_NEW_TASK);
 
             mNotificationBuilder.addAction(R.drawable.ic_menu_share,
                      r.getString(com.android.internal.R.string.share),
-                     PendingIntent.getActivity(context, 0, chooserIntent, 
+                     PendingIntent.getActivity(context, 0, chooserIntent,
                              PendingIntent.FLAG_CANCEL_CURRENT));
 
-            Intent trashIntent = new Intent();
-            trashIntent.setClass(context, TrashScreenshot.class);
-            trashIntent.putExtra(TrashScreenshot.SCREENSHOT_URI, uri.toString());
-
-            mNotificationBuilder.addAction(android.R.drawable.ic_menu_delete,
-                     r.getString(com.android.internal.R.string.delete),
-                     PendingIntent.getBroadcast(context, 0, trashIntent,
-                        PendingIntent.FLAG_CANCEL_CURRENT));
-
-            outStream = resolver.openOutputStream(uri);
-            image.compress(Bitmap.CompressFormat.PNG, 100, outStream);
+            OutputStream out = resolver.openOutputStream(uri);
+            image.compress(Bitmap.CompressFormat.PNG, 100, out);
+            out.flush();
+            out.close();
 
             // update file size in the database
             values.clear();
@@ -250,23 +244,11 @@ class SaveImageInBackgroundTask extends AsyncTask<SaveImageInBackgroundData, Voi
             params[0].imageUri = uri;
             params[0].image = null;
             params[0].result = 0;
-        } catch (IOException e) {
-            // may be thrown if external storage is not mounted
+        } catch (Exception e) {
+            // IOException/UnsupportedOperationException may be thrown if external storage is not
+            // mounted
             params[0].clearImage();
             params[0].result = 1;
-        } catch (UnsupportedOperationException noOperation) {
-            // may be thrown if external storage is not mounted
-            params[0].clearImage();
-            params[0].result = 1;
-        } finally {
-            if (outStream != null) {
-                try {
-                    outStream.flush();
-                    outStream.close();
-                } catch (IOException ioe) {
-                    // let it go
-                }
-            }
         }
 
         // Recycle the bitmap data
@@ -323,7 +305,7 @@ class SaveImageInBackgroundTask extends AsyncTask<SaveImageInBackgroundData, Voi
 class GlobalScreenshot {
     private static final String TAG = "GlobalScreenshot";
 
-    public static final int SCREENSHOT_NOTIFICATION_ID = 789;
+    private static final int SCREENSHOT_NOTIFICATION_ID = 789;
     private static final int SCREENSHOT_FLASH_TO_PEAK_DURATION = 130;
     private static final int SCREENSHOT_DROP_IN_DURATION = 430;
     private static final int SCREENSHOT_DROP_OUT_DELAY = 500;

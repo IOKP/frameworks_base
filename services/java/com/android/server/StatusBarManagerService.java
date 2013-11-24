@@ -367,15 +367,6 @@ public class StatusBarManagerService extends IStatusBarService.Stub
     }
 
     @Override
-    public void toggleNotificationShade() {
-        if (mBar != null) {
-            try {
-                mBar.toggleNotificationShade();
-            } catch (RemoteException ex) {}
-        }
-    }
-
-    @Override
     public void toggleRecentApps() {
         if (mBar != null) {
             try {
@@ -406,6 +397,15 @@ public class StatusBarManagerService extends IStatusBarService.Stub
     public void setCurrentUser(int newUserId) {
         if (SPEW) Slog.d(TAG, "Setting current user to user " + newUserId);
         mCurrentUserId = newUserId;
+    }
+
+    @Override
+    public void setWindowState(int window, int state) {
+        if (mBar != null) {
+            try {
+                mBar.setWindowState(window, state);
+            } catch (RemoteException ex) {}
+        }
     }
 
     private void enforceStatusBar() {

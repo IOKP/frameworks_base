@@ -32,8 +32,6 @@
     <dimen name="toast_y_offset">64dip</dimen>
     <!-- Height of the status bar -->
     <dimen name="status_bar_height">25dip</dimen>
-    <!-- Padding of the status bar -->
-    <dimen name="status_bar_padding">9dip</dimen>
     <!-- Height of the bottom navigation / system bar. -->
     <dimen name="navigation_bar_height">48dp</dimen>
     <!-- Height of the bottom navigation bar in portrait; often the same as @dimen/navigation_bar_height -->
@@ -42,12 +40,6 @@
     <dimen name="navigation_bar_width">42dp</dimen>
     <!-- Height of notification icons in the status bar -->
     <dimen name="status_bar_icon_size">24dip</dimen>
-
-    <!-- StatusBar Icon size is now dynamically scaled. As Such, we need to specify some padding -->
-    <!-- These are for System Icons -->
-    <dimen name="status_bar_icon_top_padding">3dp</dimen>
-    <dimen name="status_bar_icon_bottom_padding">3dp</dimen>
-
     <!-- Size of the giant number (unread count) in the notifications -->
     <dimen name="status_bar_content_number_size">48sp</dimen>
     <!-- Height of the system bar (combined status & navigation); used by
@@ -58,8 +50,12 @@
     <!-- Margin at the edge of the screen to ignore touch events for in the windowshade. -->
     <dimen name="status_bar_edge_ignore">5dp</dimen>
 
-    <!-- Size of the fastscroll hint letter -->
+    <!-- Minimum size of the fastscroll overlay -->
     <dimen name="fastscroll_overlay_size">104dp</dimen>
+    <!-- Text size of the fastscroll overlay -->
+    <dimen name="fastscroll_overlay_text_size">24sp</dimen>
+    <!-- Padding of the fastscroll overlay -->
+    <dimen name="fastscroll_overlay_padding">16dp</dimen>
     <!-- Width of the fastscroll thumb -->
     <dimen name="fastscroll_thumb_width">64dp</dimen>
     <!-- Height of the fastscroll thumb -->
@@ -77,9 +73,6 @@
     <dimen name="password_keyboard_horizontalGap">3dip</dimen>
     <!-- Default vertical gap between keys in the password keyboard (used by keyguard) -->
     <dimen name="password_keyboard_verticalGap">9dip</dimen>
-
-    <!-- Default maximum height for the widget pager in the keyguard -->
-    <dimen name="keyguard_widget_pager_max_height">480dp</dimen>
 
     <!-- Size of lockscreen outerring on unsecure unlock LockScreen -->
     <dimen name="keyguard_lockscreen_outerring_diameter">270dp</dimen>
@@ -318,10 +311,7 @@
     <dimen name="keyguard_security_width">320dp</dimen>
 
     <!-- Height of the sliding KeyguardSecurityContainer (includes 2x keyguard_security_view_margin) -->
-    <dimen name="keyguard_security_height">350dp</dimen>
-
-    <!-- Height of the sliding KeyguardSecurityContainer with hidden widget (includes 2x keyguard_security_view_margin) -->
-    <dimen name="keyguard_security_no_widget_height">450dp</dimen>
+    <dimen name="keyguard_security_height">400dp</dimen>
 
     <!-- Margin around the various security views -->
     <dimen name="keyguard_security_view_margin">8dp</dimen>
@@ -354,26 +344,18 @@
     security mode. -->
     <dimen name="kg_small_widget_height">160dp</dimen>
 
-    <!-- Left padding of num pad key on keyguard -->
-    <dimen name="kg_num_pad_key_padding_left">10dp</dimen>
+    <!-- Rounded corner radius for video subtitles. -->
+    <dimen name="subtitle_corner_radius">2dp</dimen>
 
-    <dimen name="icon_size_20">20.0dip</dimen>
-    <dimen name="icon_size_15">15.0dip</dimen>
-    <dimen name="notification_ribbon_padding">16dp</dimen>
-    <dimen name="lockscreen_ribbon_padding">16dp</dimen>
+    <!-- Shadow radius for video subtitles. -->
+    <dimen name="subtitle_shadow_radius">2dp</dimen>
 
-    <!-- Font size for notification text -->
-    <dimen name="glowpad_notification_font_size">12dp</dimen>
+    <!-- Shadow offset for video subtitles. -->
+    <dimen name="subtitle_shadow_offset">2dp</dimen>
 
-    <!-- Radius of notification text -->
-    <dimen name="glowpad_notification_text_radius">60dp</dimen>
+    <!-- Outline width for video subtitles. -->
+    <dimen name="subtitle_outline_width">2dp</dimen>
 
-    <!-- Top margin for overflow notifications shown in the P.O.R.N. view -->
-    <dimen name="glowpad_overflow_notifications_margin_top">48dp</dimen>
-
-    <!-- Lockscreen target insets -->
-    <item type="dimen" name="lockscreen_target_inset">30dp</item>
-    <!-- Additional inset used for targets with icons loaded from files -->
-    <item type="dimen" name="lockscreen_target_icon_file_inset">2dp</item>
-
+    <!-- width of ImmersiveModeConfirmation (-1 for match_parent) -->
+    <dimen name="immersive_mode_cling_width">-1px</dimen>
 </resources>

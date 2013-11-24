@@ -16,35 +16,23 @@
 
 package com.android.systemui.statusbar.phone;
 
+import android.animation.ObjectAnimator;
+import android.animation.TimeAnimator;
+import android.animation.TimeAnimator.TimeListener;
+import android.content.Context;
+import android.content.res.Resources;
+import android.util.AttributeSet;
+import android.util.Log;
+import android.view.MotionEvent;
+import android.view.View;
+import android.widget.FrameLayout;
+
+import com.android.systemui.R;
+
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.ArrayDeque;
 import java.util.Iterator;
-
-import android.animation.ObjectAnimator;
-import android.animation.TimeAnimator;
-import android.animation.TimeAnimator.TimeListener;
-import android.content.ContentResolver;
-import android.content.Context;
-import android.content.res.Resources;
-import android.database.ContentObserver;
-import android.graphics.Point;
-import android.os.Handler;
-import android.os.IPowerManager;
-import android.os.RemoteException;
-import android.os.ServiceManager;
-import android.provider.Settings;
-import android.util.AttributeSet;
-import android.util.Log;
-import android.util.Slog;
-import android.view.Display;
-import android.view.MotionEvent;
-import android.view.View;
-import android.view.ViewConfiguration;
-import android.widget.FrameLayout;
-import android.widget.TextView;
-
-import com.android.systemui.R;
 
 public class PanelView extends FrameLayout {
     public static final boolean DEBUG = PanelBar.DEBUG;
@@ -52,9 +40,8 @@ public class PanelView extends FrameLayout {
 
     public static final boolean DEBUG_NAN = true; // http://b/7686690
 
-    public final void LOG(String fmt, Object... args) {
-        if (!DEBUG) return;
-        Slog.v(TAG, (mViewName != null ? (mViewName + ": ") : "") + String.format(fmt, args));
+    private final void logf(String fmt, Object... args) {
+        Log.v(TAG, (mViewName != null ? (mViewName + ": ") : "") + String.format(fmt, args));
     }
 
     public static final boolean BRAKES = false;
@@ -89,11 +76,11 @@ public class PanelView extends FrameLayout {
     private boolean mClosing;
     private boolean mRubberbanding;
     private boolean mTracking;
+    private int mTrackingPointer;
 
     private TimeAnimator mTimeAnimator;
     private ObjectAnimator mPeekAnimator;
     private FlingTracker mVelocityTracker;
-    private SettingsObserver mSettingsObserver;
 
     /**
      * A very simple low-pass velocity filter for motion events; not nearly as sophisticated as
@@ -125,14 +112,14 @@ public class PanelView extends FrameLayout {
         }
         public void computeCurrentVelocity(long timebase) {
             if (FlingTracker.DEBUG) {
-                Slog.v("FlingTracker", "computing velocities for " + mEventBuf.size() + " events");
+                Log.v("FlingTracker", "computing velocities for " + mEventBuf.size() + " events");
             }
             mVX = mVY = 0;
             MotionEventCopy last = null;
             int i = 0;
             float totalweight = 0f;
             float weight = 10f;
-            for (final Iterator<MotionEventCopy> iter = mEventBuf.descendingIterator();
+            for (final Iterator<MotionEventCopy> iter = mEventBuf.iterator();
                     iter.hasNext();) {
                 final MotionEventCopy event = iter.next();
                 if (last != null) {
@@ -140,12 +127,21 @@ public class PanelView extends FrameLayout {
                     final float dx = (event.x - last.x);
                     final float dy = (event.y - last.y);
                     if (FlingTracker.DEBUG) {
-                        Slog.v("FlingTracker", String.format("   [%d] dx=%.1f dy=%.1f dt=%.0f vx=%.1f vy=%.1f",
-                                i,
+                        Log.v("FlingTracker", String.format(
+                                "   [%d] (t=%d %.1f,%.1f) dx=%.1f dy=%.1f dt=%f vx=%.1f vy=%.1f",
+                                i, event.t, event.x, event.y,
                                 dx, dy, dt,
                                 (dx/dt),
                                 (dy/dt)
                                 ));
+                    }
+                    if (event.t == last.t) {
+                        // Really not sure what to do with events that happened at the same time,
+                        // so we'll skip subsequent events.
+                        if (DEBUG_NAN) {
+                            Log.v("FlingTracker", "skipping simultaneous event at t=" + event.t);
+                        }
+                        continue;
                     }
                     mVX += weight * dx / dt;
                     mVY += weight * dy / dt;
@@ -160,7 +156,7 @@ public class PanelView extends FrameLayout {
                 mVY /= totalweight;
             } else {
                 if (DEBUG_NAN) {
-                    Slog.v("FlingTracker", "computeCurrentVelocity warning: totalweight=0",
+                    Log.v("FlingTracker", "computeCurrentVelocity warning: totalweight=0",
                             new Throwable());
                 }
                 // so as not to contaminate the velocities with NaN
@@ -168,22 +164,22 @@ public class PanelView extends FrameLayout {
             }
 
             if (FlingTracker.DEBUG) {
-                Slog.v("FlingTracker", "computed: vx=" + mVX + " vy=" + mVY);
+                Log.v("FlingTracker", "computed: vx=" + mVX + " vy=" + mVY);
             }
         }
         public float getXVelocity() {
-            if (Float.isNaN(mVX)) {
+            if (Float.isNaN(mVX) || Float.isInfinite(mVX)) {
                 if (DEBUG_NAN) {
-                    Slog.v("FlingTracker", "warning: vx=NaN");
+                    Log.v("FlingTracker", "warning: vx=" + mVX);
                 }
                 mVX = 0;
             }
             return mVX;
         }
         public float getYVelocity() {
-            if (Float.isNaN(mVY)) {
+            if (Float.isNaN(mVY) || Float.isInfinite(mVX)) {
                 if (DEBUG_NAN) {
-                    Slog.v("FlingTracker", "warning: vx=NaN");
+                    Log.v("FlingTracker", "warning: vx=" + mVY);
                 }
                 mVY = 0;
             }
@@ -229,25 +225,17 @@ public class PanelView extends FrameLayout {
     protected float mInitialTouchY;
     protected float mFinalTouchY;
 
-    // brightness slider stuff
-    private Handler mHandler = new Handler();
-    private Float mPropFactor;
-    private Integer mBrightnessValue;
-    private int lastBrightnessChanged = -1;
-    private boolean mBrightnessSliderEnabled = true;
-    private boolean mShouldReactToBrightnessSlider = false;
-
     public void setRubberbandingEnabled(boolean enable) {
         mRubberbandingEnabled = enable;
     }
 
     private void runPeekAnimation() {
-        if (DEBUG) LOG("peek to height=%.1f", mPeekHeight);
+        if (DEBUG) logf("peek to height=%.1f", mPeekHeight);
         if (mTimeAnimator.isStarted()) {
             return;
         }
         if (mPeekAnimator == null) {
-            mPeekAnimator = ObjectAnimator.ofFloat(this, 
+            mPeekAnimator = ObjectAnimator.ofFloat(this,
                     "expandedHeight", mPeekHeight)
                 .setDuration(250);
         }
@@ -277,8 +265,8 @@ public class PanelView extends FrameLayout {
             }
         } else if (dtms > 0) {
             final float dt = dtms * 0.001f;                  // ms -> s
-            if (DEBUG) LOG("tick: v=%.2fpx/s dt=%.4fs", mVel, dt);
-            if (DEBUG) LOG("tick: before: h=%d", (int) mExpandedHeight);
+            if (DEBUG) logf("tick: v=%.2fpx/s dt=%.4fs", mVel, dt);
+            if (DEBUG) logf("tick: before: h=%d", (int) mExpandedHeight);
 
             final float fh = getFullHeight();
             boolean braking = false;
@@ -316,7 +304,7 @@ public class PanelView extends FrameLayout {
                 h = fh;
             }
 
-            if (DEBUG) LOG("tick: new h=%d closing=%s", (int) h, mClosing?"true":"false");
+            if (DEBUG) logf("tick: new h=%d closing=%s", (int) h, mClosing?"true":"false");
 
             setExpandedHeightInternal(h);
 
@@ -328,7 +316,7 @@ public class PanelView extends FrameLayout {
                 post(mStopAnimator);
             }
         } else {
-            Slog.v(TAG, "animationTick called with dtms=" + dtms + "; nothing to do (h="
+            Log.v(TAG, "animationTick called with dtms=" + dtms + "; nothing to do (h="
                     + mExpandedHeight + " v=" + mVel + ")");
         }
     }
@@ -363,7 +351,6 @@ public class PanelView extends FrameLayout {
         mPeekHeight = res.getDimension(R.dimen.peek_height)
             + getPaddingBottom() // our window might have a dropshadow
             - (mHandleView == null ? 0 : mHandleView.getPaddingTop()); // the handle might have a topshadow
-
     }
 
     private void trackMovement(MotionEvent event) {
@@ -389,37 +376,52 @@ public class PanelView extends FrameLayout {
 
         loadDimens();
 
-        if (DEBUG) LOG("handle view: " + mHandleView);
+        if (DEBUG) logf("handle view: " + mHandleView);
         if (mHandleView != null) {
             mHandleView.setOnTouchListener(new View.OnTouchListener() {
                 @Override
                 public boolean onTouch(View v, MotionEvent event) {
-                    final float y = event.getY();
-                    final float rawY = event.getRawY();
-                    if (DEBUG) LOG("handle.onTouch: a=%s y=%.1f rawY=%.1f off=%.1f",
+                    int pointerIndex = event.findPointerIndex(mTrackingPointer);
+                    if (pointerIndex < 0) {
+                        pointerIndex = 0;
+                        mTrackingPointer = event.getPointerId(pointerIndex);
+                    }
+                    final float y = event.getY(pointerIndex);
+                    final float rawDelta = event.getRawY() - event.getY();
+                    final float rawY = y + rawDelta;
+                    if (DEBUG) logf("handle.onTouch: a=%s p=[%d,%d] y=%.1f rawY=%.1f off=%.1f",
                             MotionEvent.actionToString(event.getAction()),
+                            mTrackingPointer, pointerIndex,
                             y, rawY, mTouchOffset);
                     PanelView.this.getLocationOnScreen(mAbsPos);
 
-                    switch (event.getAction()) {
+                    switch (event.getActionMasked()) {
                         case MotionEvent.ACTION_DOWN:
-                            mShouldReactToBrightnessSlider = false;
                             mTracking = true;
                             mHandleView.setPressed(true);
                             postInvalidate(); // catch the press state change
                             mInitialTouchY = y;
                             mVelocityTracker = FlingTracker.obtain();
                             trackMovement(event);
-
                             mTimeAnimator.cancel(); // end any outstanding animations
                             mBar.onTrackingStarted(PanelView.this);
-                            mTouchOffset = (rawY - mAbsPos[1]) - PanelView.this.getExpandedHeight();
+                            mTouchOffset = (rawY - mAbsPos[1]) - mExpandedHeight;
                             if (mExpandedHeight == 0) {
                                 mJustPeeked = true;
                                 runPeekAnimation();
-                                if(mBrightnessSliderEnabled) {
-                                    mHandler.postDelayed(mSetShouldReact, 400);
-                                }
+                            }
+                            break;
+
+                        case MotionEvent.ACTION_POINTER_UP:
+                            final int upPointer = event.getPointerId(event.getActionIndex());
+                            if (mTrackingPointer == upPointer) {
+                                // gesture is ongoing, find a new pointer to track
+                                final int newIndex = event.getPointerId(0) != upPointer ? 0 : 1;
+                                final float newY = event.getY(newIndex);
+                                final float newRawY = newY + rawDelta;
+                                mTrackingPointer = event.getPointerId(newIndex);
+                                mTouchOffset = (newRawY - mAbsPos[1]) - mExpandedHeight;
+                                mInitialTouchY = newY;
                             }
                             break;
 
@@ -430,16 +432,7 @@ public class PanelView extends FrameLayout {
                                     mPeekAnimator.cancel();
                                 }
                                 mJustPeeked = false;
-                                if(mBrightnessSliderEnabled) {
-                                    mHandler.removeCallbacks(mSetShouldReact);
-                                    mShouldReactToBrightnessSlider = false;
-                                }
                             }
-                            if(mBrightnessSliderEnabled && mTracking && mShouldReactToBrightnessSlider) {
-                                if(mPropFactor == null) setPropFactor();
-                                mBrightnessValue = checkMinMax(Math.round(event.getRawX() * mPropFactor));
-                                changeBrightness();
-                             }
                             if (!mJustPeeked) {
                                 PanelView.this.setExpandedHeightInternal(h);
                                 mBar.panelExpansionChanged(PanelView.this, mExpandedFraction);
@@ -451,8 +444,8 @@ public class PanelView extends FrameLayout {
                         case MotionEvent.ACTION_UP:
                         case MotionEvent.ACTION_CANCEL:
                             mFinalTouchY = y;
-                            mShouldReactToBrightnessSlider = false;
                             mTracking = false;
+                            mTrackingPointer = -1;
                             mHandleView.setPressed(false);
                             postInvalidate(); // catch the press state change
                             mBar.onTrackingStopped(PanelView.this);
@@ -498,7 +491,7 @@ public class PanelView extends FrameLayout {
                                 vel = -vel;
                             }
 
-                            if (DEBUG) LOG("gesture: dy=%f vel=(%f,%f) vlinear=%f",
+                            if (DEBUG) logf("gesture: dy=%f vel=(%f,%f) vlinear=%f",
                                     deltaY,
                                     xVel, yVel,
                                     vel);
@@ -513,7 +506,7 @@ public class PanelView extends FrameLayout {
     }
 
     public void fling(float vel, boolean always) {
-        if (DEBUG) LOG("fling: vel=%.3f, this=%s", vel, this);
+        if (DEBUG) logf("fling: vel=%.3f, this=%s", vel, this);
         mVel = vel;
 
         if (always||mVel != 0) {
@@ -525,14 +518,6 @@ public class PanelView extends FrameLayout {
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         mViewName = getResources().getResourceName(getId());
-        mSettingsObserver = new SettingsObserver(mHandler);
-        mSettingsObserver.observe();
-    }
-
-    @Override
-    protected void onDetachedFromWindow() {
-        super.onDetachedFromWindow();
-        getContext().getContentResolver().unregisterContentObserver(mSettingsObserver);
     }
 
     public String getName() {
@@ -541,7 +526,7 @@ public class PanelView extends FrameLayout {
 
     @Override
     protected void onViewAdded(View child) {
-        if (DEBUG) LOG("onViewAdded: " + child);
+        if (DEBUG) logf("onViewAdded: " + child);
     }
 
     public View getHandle() {
@@ -553,7 +538,7 @@ public class PanelView extends FrameLayout {
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
 
-        if (DEBUG) LOG("onMeasure(%d, %d) -> (%d, %d)",
+        if (DEBUG) logf("onMeasure(%d, %d) -> (%d, %d)",
                 widthMeasureSpec, heightMeasureSpec, getMeasuredWidth(), getMeasuredHeight());
 
         // Did one of our children change size?
@@ -573,7 +558,7 @@ public class PanelView extends FrameLayout {
 
 
     public void setExpandedHeight(float height) {
-        if (DEBUG) LOG("setExpandedHeight(%.1f)", height);
+        if (DEBUG) logf("setExpandedHeight(%.1f)", height);
         mRubberbanding = false;
         if (mTimeAnimator.isStarted()) {
             post(mStopAnimator);
@@ -584,7 +569,7 @@ public class PanelView extends FrameLayout {
 
     @Override
     protected void onLayout (boolean changed, int left, int top, int right, int bottom) {
-        if (DEBUG) LOG("onLayout: changed=%s, bottom=%d eh=%d fh=%d", changed?"T":"f", bottom, (int)mExpandedHeight, mFullHeight);
+        if (DEBUG) logf("onLayout: changed=%s, bottom=%d eh=%d fh=%d", changed?"T":"f", bottom, (int)mExpandedHeight, mFullHeight);
         super.onLayout(changed, left, top, right, bottom);
     }
 
@@ -592,7 +577,7 @@ public class PanelView extends FrameLayout {
         if (Float.isNaN(h)) {
             // If a NaN gets in here, it will freeze the Animators.
             if (DEBUG_NAN) {
-                Slog.v(TAG, "setExpandedHeightInternal: warning: h=NaN, using 0 instead",
+                Log.v(TAG, "setExpandedHeightInternal: warning: h=NaN, using 0 instead",
                         new Throwable());
             }
             h = 0;
@@ -608,7 +593,7 @@ public class PanelView extends FrameLayout {
 
         mExpandedHeight = h;
 
-        if (DEBUG) LOG("setExpansion: height=%.1f fh=%.1f tracking=%s rubber=%s", h, fh, mTracking?"T":"f", mRubberbanding?"T":"f");
+        if (DEBUG) logf("setExpansion: height=%.1f fh=%.1f tracking=%s rubber=%s", h, fh, mTracking?"T":"f", mRubberbanding?"T":"f");
 
         requestLayout();
 //        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) getLayoutParams();
@@ -620,7 +605,7 @@ public class PanelView extends FrameLayout {
 
     private float getFullHeight() {
         if (mFullHeight <= 0) {
-            if (DEBUG) LOG("Forcing measure() since fullHeight=" + mFullHeight);
+            if (DEBUG) logf("Forcing measure() since fullHeight=" + mFullHeight);
             measure(MeasureSpec.makeMeasureSpec(android.view.ViewGroup.LayoutParams.WRAP_CONTENT, MeasureSpec.EXACTLY),
                     MeasureSpec.makeMeasureSpec(android.view.ViewGroup.LayoutParams.WRAP_CONTENT, MeasureSpec.EXACTLY));
         }
@@ -631,7 +616,7 @@ public class PanelView extends FrameLayout {
         if (Float.isNaN(frac)) {
             // If a NaN gets in here, it will freeze the Animators.
             if (DEBUG_NAN) {
-                Slog.v(TAG, "setExpandedFraction: frac=NaN, using 0 instead",
+                Log.v(TAG, "setExpandedFraction: frac=NaN, using 0 instead",
                         new Throwable());
             }
             frac = 0;
@@ -659,13 +644,17 @@ public class PanelView extends FrameLayout {
         return mClosing;
     }
 
+    public boolean isTracking() {
+        return mTracking;
+    }
+
     public void setBar(PanelBar panelBar) {
         mBar = panelBar;
     }
 
     public void collapse() {
         // TODO: abort animation or ongoing touch
-        if (DEBUG) LOG("collapse: " + this);
+        if (DEBUG) logf("collapse: " + this);
         if (!isFullyCollapsed()) {
             mTimeAnimator.cancel();
             mClosing = true;
@@ -676,12 +665,18 @@ public class PanelView extends FrameLayout {
     }
 
     public void expand() {
-        if (DEBUG) LOG("expand: " + this);
+        if (DEBUG) logf("expand: " + this);
         if (isFullyCollapsed()) {
             mBar.startOpeningPanel(this);
             fling(mSelfExpandVelocityPx, /*always=*/ true);
         } else if (DEBUG) {
-            if (DEBUG) LOG("skipping expansion: is expanded");
+            if (DEBUG) logf("skipping expansion: is expanded");
+        }
+    }
+
+    public void cancelPeek() {
+        if (mPeekAnimator != null && mPeekAnimator.isStarted()) {
+            mPeekAnimator.cancel();
         }
     }
 
@@ -699,114 +694,5 @@ public class PanelView extends FrameLayout {
                 mPeekAnimator, ((mPeekAnimator!=null && mPeekAnimator.isStarted())?" (started)":""),
                 mTimeAnimator, ((mTimeAnimator!=null && mTimeAnimator.isStarted())?" (started)":"")
         ));
-    }
-
-    private void setPropFactor() {
-        Display display = getDisplay();
-        if(display == null)
-            return;
-
-        Point outSize = new Point();
-        display.getSize(outSize);
-        mPropFactor = Float.valueOf(android.os.PowerManager.BRIGHTNESS_ON)
-                / Float.valueOf(outSize.x);
-    }
-
-    Runnable mChangeBrightnessRunnable = new Runnable() {
-        @Override
-        public void run() {
-            if(autoBrightnessEnabled()) {
-                // do nothing if auto brightness is enabled
-            } else if(mShouldReactToBrightnessSlider) {
-                if(lastBrightnessChanged != mBrightnessValue) {
-                    // only change the brightness if it's different
-                    try {
-                        IPowerManager pw = IPowerManager.Stub
-                                .asInterface(ServiceManager.getService("power"));
-                        if (pw != null && mBrightnessValue != null && mTracking) {
-                            pw.setTemporaryScreenBrightnessSettingOverride(mBrightnessValue);
-                        }
-                    } catch (RemoteException e1) {
-                    }
-                    lastBrightnessChanged = mBrightnessValue;
-                }
-            }
-        }
-    };
-
-    Runnable mSetShouldReact = new Runnable() {
-        @Override
-        public void run() {
-            mShouldReactToBrightnessSlider = true;
-        }
-    };
-
-    Runnable mOnStopChangingBrightnessRunnable = new Runnable() {
-        @Override
-        public void run() {
-            mHandler.removeCallbacks(mSetShouldReact);
-            if(autoBrightnessEnabled()) {
-                // eat the auto brightness!
-            } else {
-                // don't really care what happened, but auto brightness is disabled; save the value!
-                try {
-                    Settings.System.putInt(mContext.getContentResolver(),
-                            Settings.System.SCREEN_BRIGHTNESS, mBrightnessValue);
-                } catch (NullPointerException e2) {
-                }
-            }
-        }
-    };
-
-    private void changeBrightness() {
-        if(mShouldReactToBrightnessSlider) {
-            mHandler.removeCallbacks(mOnStopChangingBrightnessRunnable);
-            mHandler.postDelayed(mOnStopChangingBrightnessRunnable, 500);
-            mHandler.post(mChangeBrightnessRunnable);
-        }
-    }
-
-    private int checkMinMax(int brightness) {
-        int min = 0;
-        int max = 255;
-
-        if (min > brightness) // brightness < 0x1E
-            return min;
-        else if (max < brightness) { // brightness > 0xFF
-            return max;
-        }
-
-        return brightness;
-    }
-
-    private boolean autoBrightnessEnabled() {
-        return Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.SCREEN_BRIGHTNESS_MODE,
-                Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL) == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC;
-    }
-
-    class SettingsObserver extends ContentObserver {
-        SettingsObserver(Handler handler) {
-            super(handler);
-        }
-
-        void observe() {
-            ContentResolver resolver = mContext.getContentResolver();
-            resolver.registerContentObserver(Settings.System
-                    .getUriFor(Settings.System.STATUSBAR_BRIGHTNESS_SLIDER),
-                    false, this);
-            updateSettings();
-        }
-
-        @Override
-        public void onChange(boolean selfChange) {
-            updateSettings();
-        }
-    }
-
-    private void updateSettings() {
-        ContentResolver cr = mContext.getContentResolver();
-        mBrightnessSliderEnabled = Settings.System.getBoolean(cr,
-                Settings.System.STATUSBAR_BRIGHTNESS_SLIDER, true);
     }
 }

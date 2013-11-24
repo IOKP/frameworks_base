@@ -21,9 +21,9 @@
 #include "PointerController.h"
 #include "InputListener.h"
 
-#include <androidfw/Input.h>
-#include <androidfw/VelocityControl.h>
-#include <androidfw/VelocityTracker.h>
+#include <input/Input.h>
+#include <input/VelocityControl.h>
+#include <input/VelocityTracker.h>
 #include <utils/KeyedVector.h>
 #include <utils/threads.h>
 #include <utils/Timers.h>
@@ -137,9 +137,6 @@ struct InputReaderConfiguration {
         // The device name alias supplied by the may have changed for some devices.
         CHANGE_DEVICE_ALIAS = 1 << 5,
 
-        // Stylus icon option changed.
-        CHANGE_STYLUS_ICON_ENABLED = 1 << 6,
-
         // All devices must be reopened.
         CHANGE_MUST_REOPEN = 1 << 31,
     };
@@ -227,12 +224,6 @@ struct InputReaderConfiguration {
     // True to show the location of touches on the touch screen as spots.
     bool showTouches;
 
-    // True to show the pointer icon when a stylus is used.
-    bool stylusIconEnabled;
-
-    // Ignore finger touches this long after the stylus has been used (including hover)
-    nsecs_t stylusPalmRejectionTime;
-
     InputReaderConfiguration() :
             virtualKeyQuietTime(0),
             pointerVelocityControlParameters(1.0f, 500.0f, 3000.0f, 3.0f),
@@ -249,10 +240,7 @@ struct InputReaderConfiguration {
             pointerGestureSwipeMaxWidthRatio(0.25f),
             pointerGestureMovementSpeedRatio(0.8f),
             pointerGestureZoomSpeedRatio(0.3f),
-	    showTouches(false),
-            stylusIconEnabled(false),
-            stylusPalmRejectionTime(50 * 10000000LL) // 50 ms
-    { }
+            showTouches(false) { }
 
     bool getDisplayInfo(bool external, DisplayViewport* outViewport) const;
     void setDisplayInfo(bool external, const DisplayViewport& viewport);
@@ -421,7 +409,7 @@ public:
 
 protected:
     // These members are protected so they can be instrumented by test cases.
-    virtual InputDevice* createDeviceLocked(int32_t deviceId,
+    virtual InputDevice* createDeviceLocked(int32_t deviceId, int32_t controllerNumber,
             const InputDeviceIdentifier& identifier, uint32_t classes);
 
     class ContextImpl : public InputReaderContext {
@@ -519,16 +507,17 @@ private:
 /* Represents the state of a single input device. */
 class InputDevice {
 public:
-    InputDevice(InputReaderContext* context, int32_t id, int32_t generation,
-            const InputDeviceIdentifier& identifier, uint32_t classes);
+    InputDevice(InputReaderContext* context, int32_t id, int32_t generation, int32_t
+            controllerNumber, const InputDeviceIdentifier& identifier, uint32_t classes);
     ~InputDevice();
 
     inline InputReaderContext* getContext() { return mContext; }
-    inline int32_t getId() { return mId; }
-    inline int32_t getGeneration() { return mGeneration; }
-    inline const String8& getName() { return mIdentifier.name; }
-    inline uint32_t getClasses() { return mClasses; }
-    inline uint32_t getSources() { return mSources; }
+    inline int32_t getId() const { return mId; }
+    inline int32_t getControllerNumber() const { return mControllerNumber; }
+    inline int32_t getGeneration() const { return mGeneration; }
+    inline const String8& getName() const { return mIdentifier.name; }
+    inline uint32_t getClasses() const { return mClasses; }
+    inline uint32_t getSources() const { return mSources; }
 
     inline bool isExternal() { return mIsExternal; }
     inline void setExternal(bool external) { mIsExternal = external; }
@@ -585,6 +574,7 @@ public:
 private:
     InputReaderContext* mContext;
     int32_t mId;
+    int32_t mControllerNumber;
     int32_t mGeneration;
     InputDeviceIdentifier mIdentifier;
     String8 mAlias;
@@ -1217,6 +1207,7 @@ protected:
         bool hasAssociatedDisplay;
         bool associatedDisplayIsExternal;
         bool orientationAware;
+        bool hasButtonUnderPad;
 
         enum GestureMode {
             GESTURE_MODE_POINTER,
@@ -1293,6 +1284,9 @@ protected:
             }
             if (haveSizeBias) {
                 *outSize += sizeBias;
+            }
+            if (*outSize < 0) {
+                *outSize = 0;
             }
         }
     } mCalibration;
@@ -1636,9 +1630,6 @@ private:
     VelocityControl mWheelXVelocityControl;
     VelocityControl mWheelYVelocityControl;
 
-    // The time the stylus event was processed by any TouchInputMapper
-    static nsecs_t mLastStylusTime;
-
     void sync(nsecs_t when);
 
     bool consumeRawTouches(nsecs_t when, uint32_t policyFlags);
@@ -1691,10 +1682,6 @@ private:
     const VirtualKey* findVirtualKeyHit(int32_t x, int32_t y);
 
     void assignPointerIds();
-
-    void unfadePointer(PointerControllerInterface::Transition transition);
-
-    bool rejectPalm(nsecs_t when);
 };
 
 

@@ -46,6 +46,8 @@ import android.content.pm.IPackageInstallObserver;
 import android.content.pm.IPackageManager;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.content.pm.ServiceInfo;
 import android.content.pm.Signature;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.database.ContentObserver;
@@ -146,6 +148,7 @@ class BackupManagerService extends IBackupManager.Stub {
     static final boolean COMPRESS_FULL_BACKUPS = true; // should be true in production
 
     static final String SHARED_BACKUP_AGENT_PACKAGE = "com.android.sharedstoragebackup";
+    static final String SERVICE_ACTION_TRANSPORT_HOST = "android.backup.TRANSPORT_HOST";
 
     // How often we perform a backup pass.  Privileged external callers can
     // trigger an immediate pass.
@@ -251,10 +254,13 @@ class BackupManagerService extends IBackupManager.Stub {
     volatile boolean mClearingData;
 
     // Transport bookkeeping
+    final HashMap<String,String> mTransportNames
+            = new HashMap<String,String>();             // component name -> registration name
     final HashMap<String,IBackupTransport> mTransports
-            = new HashMap<String,IBackupTransport>();
+            = new HashMap<String,IBackupTransport>();   // registration name -> binder
+    final ArrayList<TransportConnection> mTransportConnections
+            = new ArrayList<TransportConnection>();
     String mCurrentTransport;
-    IBackupTransport mLocalTransport, mGoogleTransport;
     ActiveRestoreSession mActiveRestoreSession;
 
     // Watch the device provisioning operation during setup
@@ -815,13 +821,7 @@ class BackupManagerService extends IBackupManager.Stub {
         }
 
         // Set up our transport options and initialize the default transport
-        // TODO: Have transports register themselves somehow?
         // TODO: Don't create transports that we don't need to?
-        mLocalTransport = new LocalTransport(context);  // This is actually pretty cheap
-        ComponentName localName = new ComponentName(context, LocalTransport.class);
-        registerTransport(localName.flattenToShortString(), mLocalTransport);
-
-        mGoogleTransport = null;
         mCurrentTransport = Settings.Secure.getString(context.getContentResolver(),
                 Settings.Secure.BACKUP_TRANSPORT);
         if ("".equals(mCurrentTransport)) {
@@ -829,28 +829,43 @@ class BackupManagerService extends IBackupManager.Stub {
         }
         if (DEBUG) Slog.v(TAG, "Starting with transport " + mCurrentTransport);
 
-        // Attach to the Google backup transport.  When this comes up, it will set
-        // itself as the current transport because we explicitly reset mCurrentTransport
-        // to null.
-        ComponentName transportComponent = new ComponentName("com.google.android.backup",
-                "com.google.android.backup.BackupTransportService");
-        try {
-            // If there's something out there that is supposed to be the Google
-            // backup transport, make sure it's legitimately part of the OS build
-            // and not an app lying about its package name.
-            ApplicationInfo info = mPackageManager.getApplicationInfo(
-                    transportComponent.getPackageName(), 0);
-            if ((info.flags & ApplicationInfo.FLAG_SYSTEM) != 0) {
-                if (DEBUG) Slog.v(TAG, "Binding to Google transport");
-                Intent intent = new Intent().setComponent(transportComponent);
-                context.bindServiceAsUser(intent, mGoogleConnection, Context.BIND_AUTO_CREATE,
-                        UserHandle.OWNER);
-            } else {
-                Slog.w(TAG, "Possible Google transport spoof: ignoring " + info);
+        // Find transport hosts and bind to their services
+        Intent transportServiceIntent = new Intent(SERVICE_ACTION_TRANSPORT_HOST);
+        List<ResolveInfo> hosts = mPackageManager.queryIntentServicesAsUser(
+                transportServiceIntent, 0, UserHandle.USER_OWNER);
+        if (DEBUG) {
+            Slog.v(TAG, "Found transports: " + ((hosts == null) ? "null" : hosts.size()));
+        }
+        if (hosts != null) {
+            if (MORE_DEBUG) {
+                for (int i = 0; i < hosts.size(); i++) {
+                    ServiceInfo info = hosts.get(i).serviceInfo;
+                    Slog.v(TAG, "   " + info.packageName + "/" + info.name);
+                }
             }
-        } catch (PackageManager.NameNotFoundException nnf) {
-            // No such package?  No binding.
-            if (DEBUG) Slog.v(TAG, "Google transport not present");
+            for (int i = 0; i < hosts.size(); i++) {
+                try {
+                    ServiceInfo info = hosts.get(i).serviceInfo;
+                    PackageInfo packInfo = mPackageManager.getPackageInfo(info.packageName, 0);
+                    if ((packInfo.applicationInfo.flags & ApplicationInfo.FLAG_PRIVILEGED) != 0) {
+                        ComponentName svcName = new ComponentName(info.packageName, info.name);
+                        if (DEBUG) {
+                            Slog.i(TAG, "Binding to transport host " + svcName);
+                        }
+                        Intent intent = new Intent(transportServiceIntent);
+                        intent.setComponent(svcName);
+                        TransportConnection connection = new TransportConnection();
+                        mTransportConnections.add(connection);
+                        context.bindServiceAsUser(intent,
+                                connection, Context.BIND_AUTO_CREATE,
+                                UserHandle.OWNER);
+                    } else {
+                        Slog.w(TAG, "Transport package not privileged: " + info.packageName);
+                    }
+                } catch (Exception e) {
+                    Slog.e(TAG, "Problem resolving transport service: " + e.getMessage());
+                }
+            }
         }
 
         // Now that we know about valid backup participants, parse any
@@ -1298,16 +1313,16 @@ class BackupManagerService extends IBackupManager.Stub {
 
     // Add a transport to our set of available backends.  If 'transport' is null, this
     // is an unregistration, and the transport's entry is removed from our bookkeeping.
-    private void registerTransport(String name, IBackupTransport transport) {
+    private void registerTransport(String name, String component, IBackupTransport transport) {
         synchronized (mTransports) {
-            if (DEBUG) Slog.v(TAG, "Registering transport " + name + " = " + transport);
+            if (DEBUG) Slog.v(TAG, "Registering transport "
+                    + component + "::" + name + " = " + transport);
             if (transport != null) {
                 mTransports.put(name, transport);
+                mTransportNames.put(component, name);
             } else {
-                mTransports.remove(name);
-                if ((mCurrentTransport != null) && mCurrentTransport.equals(name)) {
-                    mCurrentTransport = null;
-                }
+                mTransports.remove(mTransportNames.get(component));
+                mTransportNames.remove(component);
                 // Nothing further to do in the unregistration case
                 return;
             }
@@ -1393,18 +1408,23 @@ class BackupManagerService extends IBackupManager.Stub {
         }
     };
 
-    // ----- Track connection to GoogleBackupTransport service -----
-    ServiceConnection mGoogleConnection = new ServiceConnection() {
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            if (DEBUG) Slog.v(TAG, "Connected to Google transport");
-            mGoogleTransport = IBackupTransport.Stub.asInterface(service);
-            registerTransport(name.flattenToShortString(), mGoogleTransport);
+    // ----- Track connection to transports service -----
+    class TransportConnection implements ServiceConnection {
+        @Override
+        public void onServiceConnected(ComponentName component, IBinder service) {
+            if (DEBUG) Slog.v(TAG, "Connected to transport " + component);
+            try {
+                IBackupTransport transport = IBackupTransport.Stub.asInterface(service);
+                registerTransport(transport.name(), component.flattenToShortString(), transport);
+            } catch (RemoteException e) {
+                Slog.e(TAG, "Unable to register transport " + component);
+            }
         }
 
-        public void onServiceDisconnected(ComponentName name) {
-            if (DEBUG) Slog.v(TAG, "Disconnected from Google transport");
-            mGoogleTransport = null;
-            registerTransport(name.flattenToShortString(), null);
+        @Override
+        public void onServiceDisconnected(ComponentName component) {
+            if (DEBUG) Slog.v(TAG, "Disconnected from transport " + component);
+            registerTransport(null, component.flattenToShortString(), null);
         }
     };
 
@@ -1991,6 +2011,15 @@ class BackupManagerService extends IBackupManager.Stub {
                     Slog.i(TAG, "Package " + request.packageName
                             + " no longer supports backup; skipping");
                     addBackupTrace("skipping - no agent, completion is noop");
+                    executeNextState(BackupState.RUNNING_QUEUE);
+                    return;
+                }
+
+                if ((mCurrentPackage.applicationInfo.flags & ApplicationInfo.FLAG_STOPPED) != 0) {
+                    // The app has been force-stopped or cleared or just installed,
+                    // and not yet launched out of that state, so just as it won't
+                    // receive broadcasts, we won't run it for backup.
+                    addBackupTrace("skipping - stopped");
                     executeNextState(BackupState.RUNNING_QUEUE);
                     return;
                 }
@@ -2877,7 +2906,7 @@ class BackupManagerService extends IBackupManager.Stub {
             // Save associated .obb content if it exists and we did save the apk
             // check for .obb and save those too
             final UserEnvironment userEnv = new UserEnvironment(UserHandle.USER_OWNER);
-            final File obbDir = userEnv.getExternalStorageAppObbDirectory(pkg.packageName);
+            final File obbDir = userEnv.buildExternalStorageAppObbDirs(pkg.packageName)[0];
             if (obbDir != null) {
                 if (MORE_DEBUG) Log.i(TAG, "obb dir: " + obbDir.getAbsolutePath());
                 File[] obbFiles = obbDir.listFiles();
@@ -5358,47 +5387,53 @@ class BackupManagerService extends IBackupManager.Stub {
     }
 
     // Enable/disable the backup service
+    @Override
     public void setBackupEnabled(boolean enable) {
         mContext.enforceCallingOrSelfPermission(android.Manifest.permission.BACKUP,
                 "setBackupEnabled");
 
         Slog.i(TAG, "Backup enabled => " + enable);
 
-        boolean wasEnabled = mEnabled;
-        synchronized (this) {
-            Settings.Secure.putInt(mContext.getContentResolver(),
-                    Settings.Secure.BACKUP_ENABLED, enable ? 1 : 0);
-            mEnabled = enable;
-        }
+        long oldId = Binder.clearCallingIdentity();
+        try {
+            boolean wasEnabled = mEnabled;
+            synchronized (this) {
+                Settings.Secure.putInt(mContext.getContentResolver(),
+                        Settings.Secure.BACKUP_ENABLED, enable ? 1 : 0);
+                mEnabled = enable;
+            }
 
-        synchronized (mQueueLock) {
-            if (enable && !wasEnabled && mProvisioned) {
-                // if we've just been enabled, start scheduling backup passes
-                startBackupAlarmsLocked(BACKUP_INTERVAL);
-            } else if (!enable) {
-                // No longer enabled, so stop running backups
-                if (DEBUG) Slog.i(TAG, "Opting out of backup");
+            synchronized (mQueueLock) {
+                if (enable && !wasEnabled && mProvisioned) {
+                    // if we've just been enabled, start scheduling backup passes
+                    startBackupAlarmsLocked(BACKUP_INTERVAL);
+                } else if (!enable) {
+                    // No longer enabled, so stop running backups
+                    if (DEBUG) Slog.i(TAG, "Opting out of backup");
 
-                mAlarmManager.cancel(mRunBackupIntent);
+                    mAlarmManager.cancel(mRunBackupIntent);
 
-                // This also constitutes an opt-out, so we wipe any data for
-                // this device from the backend.  We start that process with
-                // an alarm in order to guarantee wakelock states.
-                if (wasEnabled && mProvisioned) {
-                    // NOTE: we currently flush every registered transport, not just
-                    // the currently-active one.
-                    HashSet<String> allTransports;
-                    synchronized (mTransports) {
-                        allTransports = new HashSet<String>(mTransports.keySet());
+                    // This also constitutes an opt-out, so we wipe any data for
+                    // this device from the backend.  We start that process with
+                    // an alarm in order to guarantee wakelock states.
+                    if (wasEnabled && mProvisioned) {
+                        // NOTE: we currently flush every registered transport, not just
+                        // the currently-active one.
+                        HashSet<String> allTransports;
+                        synchronized (mTransports) {
+                            allTransports = new HashSet<String>(mTransports.keySet());
+                        }
+                        // build the set of transports for which we are posting an init
+                        for (String transport : allTransports) {
+                            recordInitPendingLocked(true, transport);
+                        }
+                        mAlarmManager.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis(),
+                                mRunInitIntent);
                     }
-                    // build the set of transports for which we are posting an init
-                    for (String transport : allTransports) {
-                        recordInitPendingLocked(true, transport);
-                    }
-                    mAlarmManager.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis(),
-                            mRunInitIntent);
                 }
             }
+        } finally {
+            Binder.restoreCallingIdentity(oldId);
         }
     }
 

@@ -1,8 +1,5 @@
 /*
  * Copyright (C) 2007 The Android Open Source Project
- * Copyright (c) 2013 The Linux Foundation. All rights reserved.
- *
- * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,7 +39,6 @@ import android.os.UserHandle;
 import android.provider.Settings;
 import android.provider.Settings.Global;
 import android.provider.Settings.Secure;
-import android.telephony.MSimTelephonyManager;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
@@ -51,6 +47,7 @@ import com.android.internal.content.PackageHelper;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.RILConstants;
+import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.util.XmlUtils;
 import com.android.internal.widget.LockPatternUtils;
 import com.android.internal.widget.LockPatternView;
@@ -75,7 +72,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     // database gets upgraded properly. At a minimum, please confirm that 'upgradeVersion'
     // is properly propagated through your change.  Not doing so will result in a loss of user
     // settings.
-    private static final int DATABASE_VERSION = 97;
+    private static final int DATABASE_VERSION = 98;
 
     private Context mContext;
     private int mUserHandle;
@@ -1433,7 +1430,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     };
                     String[] secureToGlobal = {
                             Settings.Global.PREFERRED_NETWORK_MODE,
-                            Settings.Global.PREFERRED_CDMA_SUBSCRIPTION,
+                            Settings.Global.CDMA_SUBSCRIPTION_MODE,
                     };
 
                     moveSettingsToNewTable(db, TABLE_SYSTEM, TABLE_GLOBAL, systemToGlobal, true);
@@ -1542,6 +1539,24 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         if (upgradeVersion == 96) {
             // NOP bump due to a reverted change that some people got on upgrade.
             upgradeVersion = 97;
+        }
+
+        if (upgradeVersion == 97) {
+            if (mUserHandle == UserHandle.USER_OWNER) {
+                db.beginTransaction();
+                SQLiteStatement stmt = null;
+                try {
+                    stmt = db.compileStatement("INSERT OR REPLACE INTO global(name,value)"
+                            + " VALUES(?,?);");
+                    loadIntegerSetting(stmt, Settings.Global.LOW_BATTERY_SOUND_TIMEOUT,
+                            R.integer.def_low_battery_sound_timeout);
+                    db.setTransactionSuccessful();
+                } finally {
+                    db.endTransaction();
+                    if (stmt != null) stmt.close();
+                }
+            }
+            upgradeVersion = 98;
         }
 
         // *** Remember to update DATABASE_VERSION above!
@@ -1659,7 +1674,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 try {
                     LockPatternUtils lpu = new LockPatternUtils(mContext);
                     List<LockPatternView.Cell> cellPattern =
-                            lpu.stringToPattern(lockPattern);
+                            LockPatternUtils.stringToPattern(lockPattern);
                     lpu.saveLockPattern(cellPattern);
                 } catch (IllegalArgumentException e) {
                     // Don't want corrupted lock pattern to hang the reboot process
@@ -1966,9 +1981,6 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             // Set default tty mode
             loadSetting(stmt, Settings.System.TTY_MODE, 0);
 
-            // Set default noise suppression value
-            loadSetting(stmt, Settings.System.NOISE_SUPPRESSION, 0);
-
             loadIntegerSetting(stmt, Settings.System.SCREEN_BRIGHTNESS,
                     R.integer.def_screen_brightness);
 
@@ -2001,8 +2013,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 R.bool.def_sound_effects_enabled);
         loadBooleanSetting(stmt, Settings.System.HAPTIC_FEEDBACK_ENABLED,
                 R.bool.def_haptic_feedback);
-        loadIntegerSetting(stmt, Settings.System.VOLUME_ADJUST_SOUNDS_ENABLED,
-            R.integer.def_volume_adjust_sounds_enabled);
+
         loadIntegerSetting(stmt, Settings.System.LOCKSCREEN_SOUNDS_ENABLED,
             R.integer.def_lockscreen_sounds_enabled);
     }
@@ -2247,20 +2258,21 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             // Set default cdma call auto retry
             loadSetting(stmt, Settings.Global.CALL_AUTO_RETRY, 0);
 
-            // Set the preferred network mode to 0 = Global, CDMA default
+            // Set the preferred network mode to target desired value or Default
+            // value defined in RILConstants
             int type;
-            if (TelephonyManager.getLteOnCdmaModeStatic() == PhoneConstants.LTE_ON_CDMA_TRUE) {
-                type = Phone.NT_MODE_GLOBAL;
-            } else {
-                type = SystemProperties.getInt("ro.telephony.default_network",
+            type = SystemProperties.getInt("ro.telephony.default_network",
                         RILConstants.PREFERRED_NETWORK_MODE);
-            }
+            loadSetting(stmt, Settings.Global.PREFERRED_NETWORK_MODE, type);
 
-            String val = Integer.toString(type);
-            if (MSimTelephonyManager.getDefault().isMultiSimEnabled()) {
-                val = type + "," + type;
-            }
-            loadSetting(stmt, Settings.Global.PREFERRED_NETWORK_MODE, val);
+            // Set the preferred cdma subscription source to target desired value or default
+            // value defined in CdmaSubscriptionSourceManager
+            type = SystemProperties.getInt("ro.telephony.default_cdma_sub",
+                        CdmaSubscriptionSourceManager.PREFERRED_CDMA_SUBSCRIPTION);
+            loadSetting(stmt, Settings.Global.CDMA_SUBSCRIPTION_MODE, type);
+
+            loadIntegerSetting(stmt, Settings.Global.LOW_BATTERY_SOUND_TIMEOUT,
+                    R.integer.def_low_battery_sound_timeout);
 
             // --- New global settings start here
         } finally {
